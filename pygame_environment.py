@@ -27,20 +27,20 @@ class MarbleGameManager:
     # Scene interface
     self.scene = Scene
 
-  def mainloop(self):
-    self.running = True
+    self.running = False
 
-    while self.running:
-      # 1. collect user input
-      for event in pygame.event.get():
-        self.scene.on_event(event)
-        
-      self.scene.on_update(self.delta)
-      self.scene.on_draw(self.surface)
-      pygame.display.flip()
-      self.delta = self.clock.tick(self.fps)
+  def game_step(self, ai_action = None):
+    self.reward = 0
 
-    self.score = self.scene.time_score + self.scene.enemy_score
+    for event in pygame.event.get():
+      self.scene.on_event(event)
+      
+    self.scene.on_update(self.delta, ai_action)
+    self.scene.on_draw(self.surface)
+    pygame.display.flip()
+    self.delta = self.clock.tick(self.fps)
+
+    return self.reward, not self.running
 
 class BaseEntity(Sprite):
   def __init__(self, image, position, anchor = "topleft"):
@@ -77,15 +77,25 @@ class PlayerEntity(BaseEntity):
   def __init__(self, image, position, anchor = "topleft"):
     BaseEntity.__init__(self, image, position, anchor)
 
-  def on_keydown(self, keys_press, delta, spawn_func):
-    if keys_press[pygame.K_UP] or keys_press[pygame.K_w]:
+  def on_keydown(self, keys_press, delta, game_size, spawn_func):
+    if keys_press[pygame.K_UP] or (pygame.K_w in keys_press and keys_press[pygame.K_w]):
       self.center += pygame.Vector2(0, -1) * delta * self.speed
-    if keys_press[pygame.K_DOWN] or keys_press[pygame.K_s]:
+    if keys_press[pygame.K_DOWN] or (pygame.K_s in keys_press and keys_press[pygame.K_s]):
       self.center += pygame.Vector2(0, 1) * delta * self.speed
-    if keys_press[pygame.K_LEFT] or keys_press[pygame.K_a]:
+    if keys_press[pygame.K_LEFT] or (pygame.K_a in keys_press and keys_press[pygame.K_a]):
       self.center += pygame.Vector2(-1, 0) * delta * self.speed
-    if keys_press[pygame.K_RIGHT] or keys_press[pygame.K_d]:
+    if keys_press[pygame.K_RIGHT] or (pygame.K_d in keys_press and keys_press[pygame.K_d]):
       self.center += pygame.Vector2(1, 0) * delta * self.speed
+
+    if self.center.x < 0:
+      self.center.x = 0
+    elif self.center.x > game_size[0]:
+      self.center.x = game_size[0]
+    if self.center.y < 0:
+      self.center.y = 0
+    elif self.center.y > game_size[1]:
+      self.center.y = game_size[1]
+
     self.rect.center = self.center
 
     if keys_press[pygame.K_q]:
@@ -107,7 +117,7 @@ class EnemyEntity(BaseEntity):
   def on_update(self, delta, player_pos = None):
     if player_pos:
       current_pos = self.center
-      self.angle = math.degrees(math.atan2(current_pos[1] - player_pos[1], player_pos[0] - current_pos[0])) - 90
+      self.angle = math.degrees(math.atan2(current_pos.y - player_pos.y, player_pos.x - current_pos.x)) - 90 # y is inverted with higher y meaning lower position
       self.do_rotate()
     self.center -= self.direction * delta * self.speed
     self.rect.center = self.center
@@ -166,11 +176,11 @@ class MarbleGame(Scene):
 
   # Spawn entity
   def spawn_enemy(self):
-    gameSize = self.manager.rect.size
-    randomEdge = random.randrange(4)
-    randomPos = random.randrange(gameSize[randomEdge % 2])
-    randomCoord = tuple(randomPos if randomEdge % 2 == i else gameSize[i] * (randomEdge // 2) for i in range(2))
-    self.enemies.append(EnemyEntity(self.enemy_image, randomCoord, "center"))
+    game_size = self.manager.rect.size
+    random_edge = random.randrange(4)
+    random_pos = random.randrange(game_size[random_edge % 2])
+    random_coord = tuple(random_pos if random_edge % 2 == i else game_size[i] * (random_edge // 2) for i in range(2))
+    self.enemies.append(EnemyEntity(self.enemy_image, random_coord, "center"))
     
   def spawn_player_arrow(self):
     self.arrows.append(ArrowEntity(self.arrow_image, self.player.rect.center, "center", 5, self.player.angle))
@@ -203,12 +213,17 @@ class MarbleGame(Scene):
     if event.type == pygame.QUIT:
       self.manager.running = False
 
-  def on_update(self, delta):
-    keys = pygame.key.get_pressed()
-
-    self.player.on_keydown(keys, delta, self.spawn_player_arrow)
+  def on_update(self, delta, ai_action = None):
+    if ai_action:
+      key_mapping = [pygame.K_UP, pygame.K_DOWN, pygame.K_LEFT, pygame.K_RIGHT, pygame.K_q, pygame.K_e, pygame.K_SPACE]
+      keys = dict(zip(key_mapping, ai_action))
+    else:
+      keys = pygame.key.get_pressed()
+    
+    self.player.on_keydown(keys, delta, self.manager.rect.size, self.spawn_player_arrow)
     player_collison = self.player.rect.collidelist([enemy.rect for enemy in self.enemies])
     if player_collison >= 0:
+      self.manager.reward += -100
       self.manager.running = False
 
     for enemy in self.enemies:
@@ -217,6 +232,7 @@ class MarbleGame(Scene):
       if enemy_collison >= 0:
         self.enemies.pop(self.enemies.index(enemy))
         self.arrows.pop(enemy_collison)
+        self.manager.reward += 10
         self.enemy_score += 100
 
     for arrow in self.arrows:
@@ -228,11 +244,16 @@ class MarbleGame(Scene):
     self.enemy_spawn_timer()
 
 def main():
-  pygame.init()
   manager = MarbleGameManager(800, 600)
   manager.scene = MarbleGame(manager)
-  manager.mainloop()
-  print("Score: " + str(manager.score))
+  manager.running = True
+  
+  while manager.running:
+    manager.game_step()
+
+  print("Score: " + str(manager.scene.time_score + manager.scene.enemy_score))
+
+pygame.init()
   
 if __name__ == "__main__":
   main()
