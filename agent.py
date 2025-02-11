@@ -4,9 +4,9 @@ import numpy as np
 from collections import deque
 import time
 import math
-from operator import itemgetter
 from pygame_environment import MarbleGameManager, MarbleGame
 from model import Linear_QNet, QTrainer
+from helper import plot
 
 MAX_MEMORY = 100000
 BATCH_SIZE = 1000
@@ -69,7 +69,7 @@ class Agent:
       0 if enemy_count < 3 else enemies_dist[2][2],
     ]
 
-    return np.array(state, dtype = int)
+    return np.array(state, dtype = float)
 
   def remember(self, state, action, reward, next_state, done):
     self.memory.append((state, action, reward, next_state, done)) # Automatically discard oldest item when MAX_MEMORY is reached
@@ -89,7 +89,7 @@ class Agent:
 
   def get_action(self, state):
     # Reduce randomness overtime to help in gradient descent converge
-    self.epsilon = 80 - self.n_games
+    self.epsilon = 200 - self.n_games
 
     if random.randint(0, 200) < self.epsilon:
       final_move = [bool(random.getrandbits(1)) for _ in range(7)]
@@ -104,7 +104,7 @@ def train():
   plot_mean_scores = []
   total_score = 0
   record = 0
-  load_saved_model = True
+  load_saved_model = False
   agent = Agent()
   game_manager = MarbleGameManager(800, 600)
   game_manager.scene = MarbleGame(game_manager)
@@ -149,6 +149,8 @@ def train():
       game_manager.scene.reset()
       agent.n_games += 1
       agent.train_long_memory()
+
+  plot(plot_scores, plot_mean_scores)
 
 if __name__ == '__main__':
   train()

@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as nnFunc
 import os
+from helper import uniquify
 
 class Linear_QNet(nn.Module):
   def __init__(self, input_size, hidden_size, output_size):
@@ -29,6 +30,8 @@ class Linear_QNet(nn.Module):
       file_name = os.path.join(model_folder_path, file_name)
       self.load_state_dict(torch.load(file_name))
       self.eval()
+
+      os.rename(file_name, uniquify(file_name))
 
 class QTrainer:
   def __init__(self, model, lr, gamma):
