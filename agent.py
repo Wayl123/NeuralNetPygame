@@ -88,14 +88,8 @@ class Agent:
     self.trainer.train_step(state, action, reward, next_state, done)
 
   def get_action(self, state):
-    # Reduce randomness overtime to help in gradient descent converge
-    self.epsilon = 200 - self.n_games
-
-    if random.randint(0, 200) < self.epsilon:
-      final_move = [bool(random.getrandbits(1)) for _ in range(7)]
-    else:
-      prediction = self.model(torch.tensor(state, dtype = torch.float))
-      final_move = [move > 0 for move in prediction]
+    prediction = self.model(torch.tensor(state, dtype = torch.float))
+    final_move = [move > 0 for move in prediction]
 
     return final_move
 
