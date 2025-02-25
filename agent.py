@@ -7,16 +7,17 @@ import math
 from pygame_environment import MarbleGameManager, MarbleGame
 from model import Linear_QNet, QTrainer
 from helper import plot
+import torch.multiprocessing as mp
 
 MAX_MEMORY = 100000
 BATCH_SIZE = 1000
 LR = 0.001
-MAX_GAME = 1000
+MAX_GAME = 200
+GAME_PROCESSES = 5
 
 class Agent:
   def __init__(self):
     self.n_games = 1
-    self.epsilon = 0 # Randomness
     self.gamma = 0.9 # Discount rate
     self.memory = deque(maxlen = MAX_MEMORY)
     self.model = Linear_QNet(16, 256, 7)
@@ -93,19 +94,13 @@ class Agent:
 
     return final_move
 
-def train():
+def train_game(agent, record):
   plot_scores = []
   plot_mean_scores = []
   total_score = 0
-  record = 0
-  load_saved_model = False
-  agent = Agent()
   game_manager = MarbleGameManager(800, 600)
   game_manager.scene = MarbleGame(game_manager)
   game_manager.running = True
-
-  if load_saved_model:
-    agent.model.load()
 
   while agent.n_games < MAX_GAME:
     # Get old state
@@ -127,11 +122,11 @@ def train():
     if done:
       score = game_manager.scene.time_score + game_manager.scene.enemy_score
 
-      if score > record:
-        record = score
+      if score > record.value:
+        record.value = score
         agent.model.save()
 
-      print('Game', agent.n_games, 'Score', score, 'Record:', record)
+      print("Process", mp.current_process().name, "Game", agent.n_games, "Score", score, "Record", record.value)
 
       plot_scores.append(score)
       total_score += score
@@ -145,6 +140,26 @@ def train():
       agent.train_long_memory()
 
   plot(plot_scores, plot_mean_scores)
+
+def train():
+  load_saved_model = True
+  agent = Agent()
+  record = mp.Value("i", 0)
+
+  processes = []
+
+  if load_saved_model:
+    agent.model.load()
+
+  agent.model.share_memory()
+
+  for _ in range(GAME_PROCESSES):
+    p = mp.Process(target = train_game, args = (agent, record))
+    processes.append(p)
+    p.start()
+
+  for p in processes:
+    p.join()
 
 if __name__ == '__main__':
   train()
