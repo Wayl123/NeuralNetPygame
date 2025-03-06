@@ -1,4 +1,6 @@
 import torch
+import torch.nn as nn
+import torch.multiprocessing as mp
 import random
 import numpy as np
 from collections import deque
@@ -7,7 +9,6 @@ import math
 from pygame_environment import MarbleGameManager, MarbleGame
 from model import Linear_QNet, QTrainer
 from helper import plot
-import torch.multiprocessing as mp
 
 MAX_MEMORY = 100000
 BATCH_SIZE = 1000
@@ -124,6 +125,7 @@ def train_game(agent, record):
 
       if score > record.value:
         record.value = score
+        agent.model.record = nn.Parameter(torch.tensor(score, dtype = torch.int), False)
         agent.model.save()
 
       print("Process", mp.current_process().name, "Game", agent.n_games, "Score", score, "Record", record.value)
@@ -142,7 +144,7 @@ def train_game(agent, record):
   plot(plot_scores, plot_mean_scores)
 
 def train():
-  load_saved_model = True
+  load_saved_model = False
   agent = Agent()
   record = mp.Value("i", 0)
 
@@ -150,6 +152,10 @@ def train():
 
   if load_saved_model:
     agent.model.load()
+  else:
+    agent.model.load_record()
+
+  record.value = agent.model.record.data.item()
 
   agent.model.share_memory()
 

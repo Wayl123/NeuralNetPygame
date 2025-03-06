@@ -10,12 +10,13 @@ class Linear_QNet(nn.Module):
     super().__init__()
     self.linear1 = nn.Linear(input_size, hidden_size)
     self.linear2 = nn.Linear(hidden_size, output_size)
+    self.record = nn.Parameter(torch.tensor(0, dtype = torch.int), False)
 
   def forward(self, x):
     x = nnFunc.relu(self.linear1(x))
     x = nnFunc.tanh(self.linear2(x))
     return x
-
+  
   def save(self, file_name = "model.pth"):
     model_folder_path = os.path.join(os.path.dirname(__file__), "model")
     if not os.path.exists(model_folder_path):
@@ -26,12 +27,18 @@ class Linear_QNet(nn.Module):
 
   def load(self, file_name = "model.pth"):
     model_folder_path = os.path.join(os.path.dirname(__file__), "model")
-    if os.path.exists(model_folder_path):
-      file_name = os.path.join(model_folder_path, file_name)
+    file_name = os.path.join(model_folder_path, file_name)
+    if os.path.exists(file_name):
       self.load_state_dict(torch.load(file_name))
       self.eval()
 
       os.rename(file_name, uniquify(file_name))
+
+  def load_record(self, file_name = "model.pth"):
+    model_folder_path = os.path.join(os.path.dirname(__file__), "model")
+    file_name = os.path.join(model_folder_path, file_name)
+    if os.path.exists(file_name):
+      self.record = nn.Parameter(torch.load(file_name)["record"], False)
 
 class QTrainer:
   def __init__(self, model, lr, gamma):
