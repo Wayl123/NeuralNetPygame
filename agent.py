@@ -1,77 +1,36 @@
 import torch
 import torch.nn as nn
 import torch.multiprocessing as mp
-import random
 import numpy as np
+import random
 from collections import deque
-import time
-import math
 from pygame_environment import MarbleGameManager, MarbleGame
-from model import Linear_QNet, QTrainer
+from model import CNN, Trainer
 from helper import plot
 
 MAX_MEMORY = 100000
 BATCH_SIZE = 1000
 LR = 0.001
 MAX_GAME = 200
-GAME_PROCESSES = 5
+GAME_PROCESSES = 4
 
 class Agent:
   def __init__(self):
     self.n_games = 1
     self.gamma = 0.9 # Discount rate
     self.memory = deque(maxlen = MAX_MEMORY)
-    self.model = Linear_QNet(16, 256, 7)
-    self.trainer = QTrainer(self.model, lr = LR, gamma=self.gamma)
+    self.model = CNN(7)
+    self.trainer = Trainer(self.model, lr = LR, gamma=self.gamma)
 
   def get_state(self, game):
-    player_center = game.player.center
-    game_size = game.manager.rect.size
-    player_dir = game.player.direction
-    bullet_cooldown = time.time() - game.player.cooldownStart
+    state = game.get_state() # width x height x dimension(channel size)
+    # 512 x 512
+    bin_size = 4
+    state = state.reshape((state.shape[0]//bin_size, bin_size, state.shape[1]//bin_size, bin_size, 3)).mean(3).mean(1)
+    # 128 x 128
+    state = state.transpose((2, 1, 0)) # channel x height x width
 
-    enemies = game.enemies
-    enemies_dist = []
-
-    for enemy in enemies:
-      enemy_center = enemy.center
-      dist_from_player = enemy_center.distance_to(player_center)
-      rad = math.atan2(player_center.y - enemy_center.y, enemy_center.x - player_center.x) - (math.pi / 2)
-      enemies_dist.append((dist_from_player, math.sin(rad), math.cos(rad)))
-
-    enemies_dist.sort()
-    enemy_count = len(enemies_dist)
-    
-    # Input to the nn model
-    state = [
-      # Player dist from edge
-      player_center.x, # Left
-      game_size[0] - player_center.x, # Right
-      player_center.y, # Top
-      game_size[1] - player_center.y, # Bottom
-
-      # Shooting direction
-      player_dir.x,
-      player_dir.y,
-
-      # Bullet cooldown
-      bullet_cooldown,
-
-      # Dist and direction of closest 3 enemies (need some testing to see how to do this)
-      -1 if enemy_count < 1 else enemies_dist[0][0],
-      0 if enemy_count < 1 else enemies_dist[0][1],
-      0 if enemy_count < 1 else enemies_dist[0][2],
-
-      -1 if enemy_count < 2 else enemies_dist[1][0],
-      0 if enemy_count < 2 else enemies_dist[1][1],
-      0 if enemy_count < 2 else enemies_dist[1][2],
-
-      -1 if enemy_count < 3 else enemies_dist[2][0],
-      0 if enemy_count < 3 else enemies_dist[2][1],
-      0 if enemy_count < 3 else enemies_dist[2][2],
-    ]
-
-    return np.array(state, dtype = float)
+    return state
 
   def remember(self, state, action, reward, next_state, done):
     self.memory.append((state, action, reward, next_state, done)) # Automatically discard oldest item when MAX_MEMORY is reached
@@ -90,8 +49,10 @@ class Agent:
     self.trainer.train_step(state, action, reward, next_state, done)
 
   def get_action(self, state):
-    prediction = self.model(torch.tensor(state, dtype = torch.float))
-    final_move = [move > 0 for move in prediction]
+    tensor_image = torch.from_numpy(state) 
+    tensor_image = tensor_image.unsqueeze(0) # batch size x channel x height x width
+    prediction = self.model(tensor_image)
+    final_move = [move > 0 for move in prediction.tolist()[0]]
 
     return final_move
 
@@ -99,26 +60,26 @@ def train_game(agent, record):
   plot_scores = []
   plot_mean_scores = []
   total_score = 0
-  game_manager = MarbleGameManager(800, 600)
+  game_manager = MarbleGameManager()
   game_manager.scene = MarbleGame(game_manager)
   game_manager.running = True
 
   while agent.n_games < MAX_GAME:
     # Get old state
-    state_old = agent.get_state(game_manager.scene)
+    state = agent.get_state(game_manager)
 
     # Get move
-    final_move = agent.get_action(state_old)
+    final_move = agent.get_action(state)
 
     # Perform move and get new state
     reward, done = game_manager.game_step(final_move)
-    state_new = agent.get_state(game_manager.scene)
+    next_state = agent.get_state(game_manager)
 
     # Train short memory
-    agent.train_short_memory(state_old, final_move, reward, state_new, done)
+    agent.train_short_memory(state, final_move, reward, next_state, done)
 
     # Remember
-    agent.remember(state_old, final_move, reward, state_new, done)
+    agent.remember(state, final_move, reward, next_state, done)
 
     if done:
       score = game_manager.scene.time_score + game_manager.scene.enemy_score
@@ -144,7 +105,7 @@ def train_game(agent, record):
   plot(plot_scores, plot_mean_scores)
 
 def train():
-  load_saved_model = False
+  load_saved_model = True
   agent = Agent()
   record = mp.Value("i", 0)
 

@@ -11,7 +11,7 @@ class Scene:
   def on_update(self, delta): pass
 
 class MarbleGameManager:
-  def __init__(self, width = 640, height = 480, center = True):
+  def __init__(self, width = 512, height = 512, center = True):
     if center:
       os.environ["SDL_VIDEO_CENTERED"] = "1"
 
@@ -41,6 +41,11 @@ class MarbleGameManager:
     self.delta = self.clock.tick(self.fps)
 
     return self.reward, not self.running
+  
+  def get_state(self):
+    subsurface = self.surface.subsurface(self.rect)
+    pixel_array = pygame.surfarray.array3d(subsurface).astype("float32")
+    return pixel_array
 
 class BaseEntity(Sprite):
   def __init__(self, image, position, anchor = "topleft"):
@@ -78,13 +83,13 @@ class PlayerEntity(BaseEntity):
     BaseEntity.__init__(self, image, position, anchor)
 
   def on_keydown(self, keys_press, delta, game_size, spawn_func):
-    if keys_press[pygame.K_UP] or (pygame.K_w in keys_press and keys_press[pygame.K_w]):
+    if keys_press[pygame.K_UP] or keys_press[pygame.K_w]:
       self.center += pygame.Vector2(0, -1) * delta * self.speed
-    if keys_press[pygame.K_DOWN] or (pygame.K_s in keys_press and keys_press[pygame.K_s]):
+    if keys_press[pygame.K_DOWN] or keys_press[pygame.K_s]:
       self.center += pygame.Vector2(0, 1) * delta * self.speed
-    if keys_press[pygame.K_LEFT] or (pygame.K_a in keys_press and keys_press[pygame.K_a]):
+    if keys_press[pygame.K_LEFT] or keys_press[pygame.K_a]:
       self.center += pygame.Vector2(-1, 0) * delta * self.speed
-    if keys_press[pygame.K_RIGHT] or (pygame.K_d in keys_press and keys_press[pygame.K_d]):
+    if keys_press[pygame.K_RIGHT] or keys_press[pygame.K_d]:
       self.center += pygame.Vector2(1, 0) * delta * self.speed
 
     if self.center.x < 0:
@@ -161,17 +166,17 @@ class MarbleGame(Scene):
 
   # Entity image
   def create_player_image(self):
-    self.player_image = pygame.Surface((20, 20), pygame.SRCALPHA)
-    pygame.draw.circle(self.player_image, (0, 0, 127), (10, 10), 10)
-    pygame.draw.circle(self.player_image, (255, 255, 255), (10, 3), 3)
+    self.player_image = pygame.Surface((16, 16), pygame.SRCALPHA)
+    pygame.draw.circle(self.player_image, (0, 0, 127), (8, 8), 8)
+    pygame.draw.circle(self.player_image, (255, 255, 255), (8, 2), 2)
 
   def create_enemy_image(self):
-    self.enemy_image = pygame.Surface((10, 10), pygame.SRCALPHA)
-    pygame.draw.circle(self.enemy_image, (127, 0, 0), (5, 5), 5)
-    pygame.draw.circle(self.enemy_image, (255, 255, 255), (5, 2), 2)
+    self.enemy_image = pygame.Surface((8, 8), pygame.SRCALPHA)
+    pygame.draw.circle(self.enemy_image, (127, 0, 0), (4, 4), 4)
+    pygame.draw.circle(self.enemy_image, (255, 255, 255), (4, 2), 2)
 
   def create_arrow_image(self):
-    self.arrow_image = pygame.Surface((5, 10), pygame.SRCALPHA)
+    self.arrow_image = pygame.Surface((4, 8), pygame.SRCALPHA)
     self.arrow_image.fill(pygame.Color(255, 255, 0))
 
   # Spawn entity
@@ -217,6 +222,8 @@ class MarbleGame(Scene):
     if ai_action:
       key_mapping = [pygame.K_UP, pygame.K_DOWN, pygame.K_LEFT, pygame.K_RIGHT, pygame.K_q, pygame.K_e, pygame.K_SPACE]
       keys = dict(zip(key_mapping, ai_action))
+      other_key_dict = dict.fromkeys([pygame.K_w, pygame.K_s, pygame.K_a, pygame.K_d], False)
+      keys.update(other_key_dict)
     else:
       keys = pygame.key.get_pressed()
     
@@ -244,7 +251,7 @@ class MarbleGame(Scene):
     self.enemy_spawn_timer()
 
 def main():
-  manager = MarbleGameManager(800, 600)
+  manager = MarbleGameManager()
   manager.scene = MarbleGame(manager)
   manager.running = True
   
