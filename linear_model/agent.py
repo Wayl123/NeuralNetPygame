@@ -99,7 +99,7 @@ def train_game(agent, record):
   plot_scores = []
   plot_mean_scores = []
   total_score = 0
-  game_manager = MarbleGameManager()
+  game_manager = MarbleGameManager(800, 600)
   game_manager.scene = MarbleGame(game_manager)
   game_manager.running = True
 
