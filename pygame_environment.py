@@ -81,6 +81,7 @@ class BaseEntity(Sprite):
 class PlayerEntity(BaseEntity):
   def __init__(self, image, position, anchor = "topleft"):
     BaseEntity.__init__(self, image, position, anchor)
+    self.ray_cast(32)
 
   def on_keydown(self, keys_press, delta, game_size, spawn_func):
     if keys_press[pygame.K_UP] or keys_press[pygame.K_w]:
@@ -102,6 +103,7 @@ class PlayerEntity(BaseEntity):
       self.center.y = game_size[1]
 
     self.rect.center = self.center
+    self.ray_cast(32)
 
     if keys_press[pygame.K_q]:
       self.angle = (self.angle + self.rotation_speed * delta) % 360
@@ -113,6 +115,14 @@ class PlayerEntity(BaseEntity):
       if time.time() - self.cooldownStart > 0.1:
         self.cooldownStart = time.time()
         spawn_func()
+
+  def ray_cast(self, ray_count):
+    self.lines = []
+
+    for n in range(ray_count):
+      angle = ((2 * math.pi) / ray_count) * n
+
+      self.lines.append((self.rect.center, (self.center.x - math.sin(angle) * 512, self.center.y + math.cos(angle) * 512)))
 
 class EnemyEntity(BaseEntity):
   def __init__(self, image, position, anchor = "topleft", speed = 0.02):
@@ -249,6 +259,9 @@ class MarbleGame(Scene):
         self.arrows.pop(self.arrows.index(arrow))
 
     self.enemy_spawn_timer()
+
+  def check_ray_cast(self):
+    return [any(enemy.rect.clipline(line) for enemy in self.enemies) for line in self.player.lines]
 
 def main():
   manager = MarbleGameManager()

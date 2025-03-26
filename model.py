@@ -8,13 +8,21 @@ from helper import uniquify
 class Linear_QNet(nn.Module):
   def __init__(self, input_size, hidden_size, output_size):
     super().__init__()
-    self.linear1 = nn.Linear(input_size, hidden_size)
-    self.linear2 = nn.Linear(hidden_size, output_size)
+    
+    self.linear_layers = nn.Sequential(
+      nn.Linear(input_size, hidden_size),
+      nn.ReLU(),
+      nn.Linear(hidden_size, hidden_size),
+      nn.ReLU(),
+      nn.Linear(hidden_size, output_size),
+      nn.Tanh()
+    )
+
     self.record = nn.Parameter(torch.tensor(0, dtype = torch.int), False)
 
   def forward(self, x):
-    x = nnFunc.relu(self.linear1(x))
-    x = nnFunc.tanh(self.linear2(x))
+    x = self.linear_layers(x)
+    
     return x
   
   def save(self, file_name = "model.pth"):

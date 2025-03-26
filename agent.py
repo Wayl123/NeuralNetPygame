@@ -21,26 +21,15 @@ class Agent:
     self.n_games = 1
     self.gamma = 0.9 # Discount rate
     self.memory = deque(maxlen = MAX_MEMORY)
-    self.model = Linear_QNet(16, 256, 7)
+    self.model = Linear_QNet(39, 256, 7)
     self.trainer = QTrainer(self.model, lr = LR, gamma=self.gamma)
 
   def get_state(self, game):
     player_center = game.player.center
     game_size = game.manager.rect.size
     player_dir = game.player.direction
+
     bullet_cooldown = time.time() - game.player.cooldownStart
-
-    enemies = game.enemies
-    enemies_dist = []
-
-    for enemy in enemies:
-      enemy_center = enemy.center
-      dist_from_player = enemy_center.distance_to(player_center)
-      rad = math.atan2(player_center.y - enemy_center.y, enemy_center.x - player_center.x) - (math.pi / 2)
-      enemies_dist.append((dist_from_player, math.sin(rad), math.cos(rad)))
-
-    enemies_dist.sort()
-    enemy_count = len(enemies_dist)
     
     # Input to the nn model
     state = [
@@ -55,21 +44,13 @@ class Agent:
       player_dir.y,
 
       # Bullet cooldown
-      bullet_cooldown,
-
-      # Dist and direction of closest 3 enemies (need some testing to see how to do this)
-      -1 if enemy_count < 1 else enemies_dist[0][0],
-      0 if enemy_count < 1 else enemies_dist[0][1],
-      0 if enemy_count < 1 else enemies_dist[0][2],
-
-      -1 if enemy_count < 2 else enemies_dist[1][0],
-      0 if enemy_count < 2 else enemies_dist[1][1],
-      0 if enemy_count < 2 else enemies_dist[1][2],
-
-      -1 if enemy_count < 3 else enemies_dist[2][0],
-      0 if enemy_count < 3 else enemies_dist[2][1],
-      0 if enemy_count < 3 else enemies_dist[2][2],
+      bullet_cooldown
     ]
+
+    # List of ray cast from player and whether they have collided with an enemy or not
+    enemy_collision = game.check_ray_cast()
+
+    state.extend(enemy_collision)
 
     return np.array(state, dtype = float)
 
