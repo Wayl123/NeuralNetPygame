@@ -6,15 +6,23 @@ import os
 from helper import uniquify
 
 class Linear_QNet(nn.Module):
-  def __init__(self, input_size, hidden_size, output_size):
+  def __init__(self, input_size, output_size):
     super().__init__()
     
     self.linear_layers = nn.Sequential(
-      nn.Linear(input_size, hidden_size),
+      nn.Linear(input_size, 256),
       nn.ReLU(),
-      nn.Linear(hidden_size, hidden_size),
+      nn.Dropout(0.5),
+      nn.Linear(256, 512),
       nn.ReLU(),
-      nn.Linear(hidden_size, output_size),
+      nn.Dropout(0.5),
+      nn.Linear(512, 256),
+      nn.ReLU(),
+      nn.Dropout(0.3),
+      nn.Linear(256, 128),
+      nn.ReLU(),
+      nn.Dropout(0.2),
+      nn.Linear(128, output_size),
       nn.Tanh()
     )
 
@@ -22,7 +30,7 @@ class Linear_QNet(nn.Module):
 
   def forward(self, x):
     x = self.linear_layers(x)
-    
+
     return x
   
   def save(self, file_name = "model.pth"):
@@ -40,7 +48,7 @@ class Linear_QNet(nn.Module):
       self.load_state_dict(torch.load(file_name))
       self.eval()
 
-      os.rename(file_name, uniquify(file_name))
+      # os.rename(file_name, uniquify(file_name))
 
   def load_record(self, file_name = "model.pth"):
     model_folder_path = os.path.join(os.path.dirname(__file__), "model")

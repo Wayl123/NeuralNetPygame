@@ -122,7 +122,16 @@ class PlayerEntity(BaseEntity):
     for n in range(ray_count):
       angle = ((2 * math.pi) / ray_count) * n
 
-      self.lines.append((self.rect.center, (self.center.x - math.sin(angle) * 512, self.center.y + math.cos(angle) * 512)))
+      self.lines.append((self.rect.center, 
+                         (self.center.x - math.sin(angle) * 32, self.center.y + math.cos(angle) * 32))) # 0 - 32
+      self.lines.append(((self.center.x - math.sin(angle) * 32, self.center.y + math.cos(angle) * 32), 
+                         (self.center.x - math.sin(angle) * 64, self.center.y + math.cos(angle) * 64))) # 32 - 64
+      self.lines.append(((self.center.x - math.sin(angle) * 64, self.center.y + math.cos(angle) * 64), 
+                         (self.center.x - math.sin(angle) * 128, self.center.y + math.cos(angle) * 128))) # 64 - 128
+      self.lines.append(((self.center.x - math.sin(angle) * 128, self.center.y + math.cos(angle) * 128), 
+                         (self.center.x - math.sin(angle) * 256, self.center.y + math.cos(angle) * 256))) # 128 - 256
+      self.lines.append(((self.center.x - math.sin(angle) * 256, self.center.y + math.cos(angle) * 256), 
+                         (self.center.x - math.sin(angle) * 512, self.center.y + math.cos(angle) * 512))) # 256 - 512
 
 class EnemyEntity(BaseEntity):
   def __init__(self, image, position, anchor = "topleft", speed = 0.02):
@@ -236,11 +245,13 @@ class MarbleGame(Scene):
       keys.update(other_key_dict)
     else:
       keys = pygame.key.get_pressed()
+
+    self.manager.reward += -1
     
     self.player.on_keydown(keys, delta, self.manager.rect.size, self.spawn_player_arrow)
     player_collison = self.player.rect.collidelist([enemy.rect for enemy in self.enemies])
     if player_collison >= 0:
-      self.manager.reward += -100
+      self.manager.reward += -1000
       self.manager.running = False
 
     for enemy in self.enemies:
@@ -249,7 +260,7 @@ class MarbleGame(Scene):
       if enemy_collison >= 0:
         self.enemies.pop(self.enemies.index(enemy))
         self.arrows.pop(enemy_collison)
-        self.manager.reward += 10
+        self.manager.reward += 100
         self.enemy_score += 100
 
     for arrow in self.arrows:

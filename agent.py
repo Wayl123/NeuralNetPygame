@@ -21,7 +21,7 @@ class Agent:
     self.n_games = 1
     self.gamma = 0.9 # Discount rate
     self.memory = deque(maxlen = MAX_MEMORY)
-    self.model = Linear_QNet(39, 256, 7)
+    self.model = Linear_QNet((32 * 5) + 7, 7)
     self.trainer = QTrainer(self.model, lr = LR, gamma=self.gamma)
 
   def get_state(self, game):
