@@ -272,12 +272,13 @@ class MarbleGame(Scene):
     self.enemy_spawn_timer()
 
   def check_ray_cast(self):
-    return [any(enemy.rect.clipline(line) for enemy in self.enemies) for line in self.player.lines]
+    return [int(any(enemy.rect.clipline(line) for enemy in self.enemies)) for line in self.player.lines]
 
 def main():
   manager = MarbleGameManager()
   manager.scene = MarbleGame(manager)
   manager.running = True
+  step = 0
   
   while manager.running:
     manager.game_step()

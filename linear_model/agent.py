@@ -14,62 +14,38 @@ MAX_MEMORY = 100000
 BATCH_SIZE = 1000
 LR = 0.001
 MAX_GAME = 256
-GAME_PROCESSES = 4
+GAME_PROCESSES = 8
 
 class Agent:
   def __init__(self):
     self.n_games = 1
     self.gamma = 0.9 # Discount rate
     self.memory = deque(maxlen = MAX_MEMORY)
-    self.model = Linear_QNet(16, 256, 7)
+    self.model = Linear_QNet((32 * 5) + 6, 7)
     self.trainer = QTrainer(self.model, lr = LR, gamma=self.gamma)
 
   def get_state(self, game):
     player_center = game.player.center
     game_size = game.manager.rect.size
     player_dir = game.player.direction
-    bullet_cooldown = time.time() - game.player.cooldownStart
-
-    enemies = game.enemies
-    enemies_dist = []
-
-    for enemy in enemies:
-      enemy_center = enemy.center
-      dist_from_player = enemy_center.distance_to(player_center)
-      rad = math.atan2(player_center.y - enemy_center.y, enemy_center.x - player_center.x) - (math.pi / 2)
-      enemies_dist.append((dist_from_player, math.sin(rad), math.cos(rad)))
-
-    enemies_dist.sort()
-    enemy_count = len(enemies_dist)
     
     # Input to the nn model
     state = [
       # Player dist from edge
-      player_center.x, # Left
-      game_size[0] - player_center.x, # Right
-      player_center.y, # Top
-      game_size[1] - player_center.y, # Bottom
+      player_center.x / game_size[0], # Left
+      (game_size[0] - player_center.x) / game_size[0], # Right
+      player_center.y / game_size[1], # Top
+      (game_size[1] - player_center.y) / game_size[1], # Bottom
 
       # Shooting direction
       player_dir.x,
-      player_dir.y,
-
-      # Bullet cooldown
-      bullet_cooldown,
-
-      # Dist and direction of closest 3 enemies (need some testing to see how to do this)
-      -1 if enemy_count < 1 else enemies_dist[0][0],
-      0 if enemy_count < 1 else enemies_dist[0][1],
-      0 if enemy_count < 1 else enemies_dist[0][2],
-
-      -1 if enemy_count < 2 else enemies_dist[1][0],
-      0 if enemy_count < 2 else enemies_dist[1][1],
-      0 if enemy_count < 2 else enemies_dist[1][2],
-
-      -1 if enemy_count < 3 else enemies_dist[2][0],
-      0 if enemy_count < 3 else enemies_dist[2][1],
-      0 if enemy_count < 3 else enemies_dist[2][2],
+      player_dir.y
     ]
+
+    # List of ray cast from player and whether they have collided with an enemy or not
+    enemy_collision = game.check_ray_cast()
+
+    state.extend(enemy_collision)
 
     return np.array(state, dtype = float)
 
@@ -99,7 +75,7 @@ def train_game(agent, record):
   plot_scores = []
   plot_mean_scores = []
   total_score = 0
-  game_manager = MarbleGameManager(800, 600)
+  game_manager = MarbleGameManager()
   game_manager.scene = MarbleGame(game_manager)
   game_manager.running = True
 
