@@ -55,9 +55,9 @@ class BaseEntity(Sprite):
     self.rect = image.get_rect()
     setattr(self.rect, anchor, position)
 
-    self.angle = 0
+    self.angle = 0 # radian
     self.speed = 0.05
-    self.rotation_speed = 0.1
+    self.rotation_speed = 0.005
     self.cooldownStart = 0
     self.center = pygame.Vector2(self.rect.center)
     self.set_direction()
@@ -66,11 +66,10 @@ class BaseEntity(Sprite):
     surface.blit(self.image, self.rect)
 
   def set_direction(self):
-    rad = math.radians(self.angle)
-    self.direction = pygame.Vector2(math.sin(rad), math.cos(rad))
+    self.direction = pygame.Vector2(math.sin(self.angle), math.cos(self.angle))
       
   def do_rotate(self):
-    self.image = pygame.transform.rotate(self.original_image, self.angle)
+    self.image = pygame.transform.rotate(self.original_image, math.degrees(self.angle))
     self.rect = self.image.get_rect()
     self.rect.center = self.center
     self.set_direction()
@@ -84,14 +83,19 @@ class PlayerEntity(BaseEntity):
     self.ray_cast(32)
 
   def on_keydown(self, keys_press, delta, game_size, spawn_func):
+    move_direction = pygame.Vector2(0, 0)
+
     if keys_press[pygame.K_UP] or keys_press[pygame.K_w]:
-      self.center += pygame.Vector2(0, -1) * delta * self.speed
+      move_direction += pygame.Vector2(0, -1)
     if keys_press[pygame.K_DOWN] or keys_press[pygame.K_s]:
-      self.center += pygame.Vector2(0, 1) * delta * self.speed
+      move_direction += pygame.Vector2(0, 1)
     if keys_press[pygame.K_LEFT] or keys_press[pygame.K_a]:
-      self.center += pygame.Vector2(-1, 0) * delta * self.speed
+      move_direction += pygame.Vector2(-1, 0)
     if keys_press[pygame.K_RIGHT] or keys_press[pygame.K_d]:
-      self.center += pygame.Vector2(1, 0) * delta * self.speed
+      move_direction += pygame.Vector2(1, 0)
+
+    if move_direction.length() != 0:
+      self.center += move_direction.normalize() * delta * self.speed
 
     if self.center.x < 0:
       self.center.x = 0
@@ -106,9 +110,9 @@ class PlayerEntity(BaseEntity):
     self.ray_cast(32)
 
     if keys_press[pygame.K_q]:
-      self.angle = (self.angle + self.rotation_speed * delta) % 360
+      self.angle = (self.angle + self.rotation_speed * delta) % (2 * math.pi)
     if keys_press[pygame.K_e]:
-      self.angle = (self.angle - self.rotation_speed * delta) % 360
+      self.angle = (self.angle - self.rotation_speed * delta) % (2 * math.pi)
     self.do_rotate()
 
     if keys_press[pygame.K_SPACE]:
@@ -141,7 +145,7 @@ class EnemyEntity(BaseEntity):
   def on_update(self, delta, player_pos = None):
     if player_pos:
       current_pos = self.center
-      self.angle = math.degrees(math.atan2(current_pos.y - player_pos.y, player_pos.x - current_pos.x)) - 90 # y is inverted with higher y meaning lower position
+      self.angle = math.atan2(current_pos.y - player_pos.y, player_pos.x - current_pos.x) - (math.pi / 2) # y is inverted with higher y meaning lower position
       self.do_rotate()
     self.center -= self.direction * delta * self.speed
     self.rect.center = self.center
