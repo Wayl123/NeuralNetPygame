@@ -4,8 +4,6 @@ import torch.multiprocessing as mp
 import random
 import numpy as np
 from collections import deque
-import time
-import math
 from pygame_environment import MarbleGameManager, MarbleGame
 from model import Linear_QNet, QTrainer
 from helper import plot
