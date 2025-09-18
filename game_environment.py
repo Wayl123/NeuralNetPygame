@@ -159,7 +159,6 @@ def update_state(action, state):
     ray_cast_update.extend([False, False, False, False, False])
 
   enemy_score_update = scores[1]
-  reward = 0
 
   enemy_list_to_remove = set([])
   bullet_list_to_remove = set([])
@@ -169,7 +168,6 @@ def update_state(action, state):
 
     if check_collision(player_collision, enemy_collision):
       game_over = True
-      reward -= 1000
 
     enemy_remove_flag = False
 
@@ -180,7 +178,6 @@ def update_state(action, state):
         enemy_list_to_remove.add(enemy)
         bullet_list_to_remove.add(bullet)
         enemy_score_update += 100
-        reward += 100
         enemy_remove_flag = True
         break
 
@@ -196,7 +193,7 @@ def update_state(action, state):
   # Scores
   scores_update = np.array([time_score_update, enemy_score_update])
 
-  return [player, start_time, enemy_list_update, bullet_list_update, enemy_last_spawn, scores_update, ray_cast_update], reward, game_over
+  return [player, start_time, enemy_list_update, bullet_list_update, enemy_last_spawn, scores_update, ray_cast_update], game_over
 
 def random_edge_pos():
   random_edge = random.randrange(4)
@@ -260,10 +257,10 @@ class MarbleGame:
     return self.state
 
   def step(self, action):
-    cur_state, reward, done = update_state(action, self.state)
+    cur_state, done = update_state(action, self.state)
     self.state = cur_state
     
-    return self.state, reward, done
+    return self.state, done
   
   def get_state_observation(self, state):
     player, _, _, _, _, _, ray_cast = state

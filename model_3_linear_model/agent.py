@@ -50,6 +50,8 @@ def train_game(agent, record, plot_data):
   game = MarbleGame()
   state = game.reset()
   obs = game.get_state_observation(state)
+  images = [game.render(state)]
+  step = 0
   
   while agent.n_games < MAX_GAME:
     # Get move
@@ -66,9 +68,15 @@ def train_game(agent, record, plot_data):
     agent.remember(obs, action, reward, new_obs, done)
 
     obs = new_obs
+    step += 1
+
+    # Save image every 4 step
+    if step % 4 == 0:
+      images.append(game.render(state))
 
     if done:
-      score = state[5]
+      scores = state[5]
+      score = sum(scores)
 
       if score > record.value:
         record.value = score
@@ -82,17 +90,26 @@ def train_game(agent, record, plot_data):
       mean_score = plot_data["total_score"] / agent.n_games
       plot_data["plot_mean_scores"].append(mean_score)
 
+      file_name = "test_result_{game_num}.gif".format(game_num = agent.n_games)
+      gif_folder_path = os.path.join(os.path.dirname(__file__), "result_display")
+      if not os.path.exists(gif_folder_path):
+        os.makedirs(gif_folder_path)
+
+      gif_file = os.path.join(gif_folder_path, file_name)
+      images[0].save(gif_file, save_all = True, append_images = images[1:], duration = 60, loop = 0)
+
       # Train long memory
       state = game.reset()
       obs = game.get_state_observation(state)
       agent.n_games += 1
       agent.train_long_memory()
+      images = [game.render(state)]
 
 def render(agent):
   game = MarbleGame()
-  obs = game.get_state_observation(game.state)
-
-  images = []
+  state = game.reset()
+  obs = game.get_state_observation(state)
+  images = [game.render(state)]
   step = 0
   score = 0
   done = False
@@ -113,7 +130,8 @@ def render(agent):
       images.append(game.render(state))
 
     if done:
-      score = state[5]
+      scores = state[5]
+      score = sum(scores)
 
   file_name = "result_{score}.gif".format(score = score)
   gif_folder_path = os.path.join(os.path.dirname(__file__), "result_display")

@@ -6,17 +6,17 @@ import random
 from PIL import Image
 from PIL import ImageDraw
 
-PLAYER_SPEED = 0.05
-PLAYER_ROT_SPEED = 0.005
+PLAYER_SPEED = 0.5
+PLAYER_ROT_SPEED = 0.1
 PLAYER_SIZE = (16, 16)
 PLAYER_HEAD_SIZE = (4, 4)
 
-ENEMY_SPEED = 0.02
-ENEMY_ROT_SPEED = 0.005
+ENEMY_SPEED = 0.2
+ENEMY_ROT_SPEED = 0.1
 ENEMY_SIZE = (8, 8)
 ENEMY_HEAD_SIZE = (2, 2)
 
-BULLET_SPEED = 0.2
+BULLET_SPEED = 2
 BULLET_SIZE = (4, 4)
 
 RAY_CAST_COUNT = 32
@@ -57,11 +57,11 @@ def get_init_state():
           set([]), # enemy_list
           set([]), # bullet_list
           None, # enemy_last_spawn
-          np.array([0, 0]), # score (time_score, enemy_score)
+          np.array([0, 0]), # scores (time_score, enemy_score)
           [False, False, False, False, False] * RAY_CAST_COUNT] # ray_cast
 
 def update_state(action, state):
-  player, start_time, enemy_list, bullet_list, enemy_last_spawn, score, _ = state
+  player, start_time, enemy_list, bullet_list, enemy_last_spawn, scores, _ = state
 
   # Player action
   player_move_direction = np.array([0, 0], dtype = float)
@@ -103,7 +103,7 @@ def update_state(action, state):
   enemy_list_update = copy.deepcopy(enemy_list)
 
   for enemy in enemy_list_update:
-    enemy.angle = math.atan2(enemy.pos[1] - player.pos[1], player.pos[0] - enemy.pos[0]) - (math.pi / 2)
+    enemy.angle = math.atan2(player.pos[1] - enemy.pos[1], player.pos[0] - enemy.pos[0])
     enemy_move_direction = np.array([math.cos(enemy.angle), math.sin(enemy.angle)])
 
     enemy.pos = np.add(enemy.pos, enemy_move_direction * enemy.speed)
@@ -158,7 +158,7 @@ def update_state(action, state):
     
     ray_cast_update.extend([False, False, False, False, False])
 
-  enemy_score_update = score[1]
+  enemy_score_update = scores[1]
   reward = 0
 
   enemy_list_to_remove = set([])
@@ -193,10 +193,10 @@ def update_state(action, state):
   enemy_list_update = enemy_list_update - enemy_list_to_remove
   bullet_list_update = bullet_list_update - bullet_list_to_remove
 
-  # Score
-  score_update = np.array([time_score_update, enemy_score_update])
+  # Scores
+  scores_update = np.array([time_score_update, enemy_score_update])
 
-  return [player, start_time, enemy_list_update, bullet_list_update, enemy_last_spawn, score_update, ray_cast_update], reward, game_over
+  return [player, start_time, enemy_list_update, bullet_list_update, enemy_last_spawn, scores_update, ray_cast_update], reward, game_over
 
 def random_edge_pos():
   random_edge = random.randrange(4)
