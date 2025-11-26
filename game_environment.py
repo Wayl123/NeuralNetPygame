@@ -80,15 +80,8 @@ def update_state(action, state):
     player_move_direction /= norm
 
   player.pos = np.add(player.pos, player_move_direction * player.speed)
-
-  if player.pos[0] < 0:
-    player.pos[0] = 0
-  elif player.pos[0] > SCREEN_SIZE[0]:
-    player.pos[0] = SCREEN_SIZE[0]
-  if player.pos[1] < 0:
-    player.pos[1] = 0
-  elif player.pos[1] > SCREEN_SIZE[1]:
-    player.pos[1] = SCREEN_SIZE[1]
+  player.pos[0] = np.clip(player.pos[0], 0, SCREEN_SIZE[0])
+  player.pos[1] = np.clip(player.pos[1], 0, SCREEN_SIZE[1])
 
   rotation = 0
   
