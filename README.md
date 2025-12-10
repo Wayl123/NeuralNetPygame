@@ -1,0 +1,1 @@
+Run pip install -e .\gymnasium_cus_env\ to install gym environment
