@@ -1,5 +1,4 @@
 import gymnasium as gym
-from gymnasium import spaces
 import pygame
 import numpy as np
 import math
@@ -63,16 +62,16 @@ class MarbleGameEnv(gym.Env):
     self.window_size = 512  # The size of the PyGame window
 
     # Observation space 
-    self.observation_space = spaces.Dict(
+    self.observation_space = gym.spaces.Dict(
       {
-        "position": spaces.Box(0, self.window_size - 1, shape = (2, ), dtype = np.float64),
-        "angle": spaces.Box(-1, 1, shape = (2, ), dtype = np.float64),
-        "ray_cast": spaces.Box(0, 1, shape = (RAY_CAST_COUNT, 5), dtype = np.bool)
+        "position": gym.spaces.Box(0, self.window_size - 1, shape = (2, ), dtype = np.float64),
+        "angle": gym.spaces.Box(-math.pi, math.pi, shape = (2, ), dtype = np.float64),
+        "ray_cast": gym.spaces.Box(0, 512, shape = (RAY_CAST_COUNT, ), dtype = np.float64)
       }
     )
 
     # 4 directional action
-    self.action_space = spaces.MultiBinary(4)
+    self.action_space = gym.spaces.MultiBinary(4)
 
     assert render_mode is None or render_mode in self.metadata["render_modes"]
     self.render_mode = render_mode
@@ -81,17 +80,17 @@ class MarbleGameEnv(gym.Env):
     self.clock = None
 
   def _get_obs(self):
-    return {"position": self._player.pos, "angle": np.array([math.sin(self._player.angle), math.cos(self._player.angle)], dtype = np.float32), "ray_cast": self._player_ray_cast}
+    return {"position": self._player.pos, "angle": np.array([math.sin(self._player.angle), math.cos(self._player.angle)], dtype = np.float64), "ray_cast": self._player_ray_cast}
 
   def _get_info(self):
-    return {"player":self._player, "start_time": self._start_time, "enemy_list": self._enemy_list, "bullet_list": self._bullet_list, "enemy_last_spawn": self._enemy_last_spawn, "ray_cast_points": self._ray_cast_points}
+    return {"player":self._player, "start_time": self._start_time, "enemy_list": self._enemy_list, "bullet_list": self._bullet_list, "enemy_last_spawn": self._enemy_last_spawn}
 
   def reset(self, seed = None, options = None):
     super().reset(seed = seed)
 
     # Observation
-    self._player = PlayerEntity(PLAYER_SIZE, np.array([SCREEN_SIZE[0] / 2, SCREEN_SIZE[1] / 2], dtype = np.int32), STARTING_ANGLE, PLAYER_SPEED, PLAYER_ROT_SPEED)
-    self._player_ray_cast = np.asarray([[False, False, False, False, False]] * RAY_CAST_COUNT, dtype = np.bool)
+    self._player = PlayerEntity(PLAYER_SIZE, np.array([SCREEN_SIZE[0] / 2, SCREEN_SIZE[1] / 2], dtype = np.float64), STARTING_ANGLE, PLAYER_SPEED, PLAYER_ROT_SPEED)
+    self._player_ray_cast = np.asarray([512] * RAY_CAST_COUNT, dtype = np.float64)
 
     # Info
     self._start_time = time.time()
@@ -142,7 +141,7 @@ class MarbleGameEnv(gym.Env):
     for i in range(4):
       if p[i] == 0:  # Check if line is parallel to the clipping boundary
         if q[i] < 0:
-          return False  # Line is outside and parallel, so completely discarded
+          return None  # Line is outside and parallel, so completely discarded
       else:
         t = q[i] / p[i]
         if p[i] < 0:
@@ -153,9 +152,13 @@ class MarbleGameEnv(gym.Env):
             t_exit = t
 
     if t_enter > t_exit:
-      return False  # Line is completely outside
+      return None  # Line is completely outside
 
-    return True
+    x1_clip = x1 + t_enter * dx
+    y1_clip = y1 + t_enter * dy
+    
+    # Return distance from clip object
+    return math.dist([x1, y1], [x1_clip, y1_clip])
   
   def step(self, action):
     # Player action
@@ -236,14 +239,10 @@ class MarbleGameEnv(gym.Env):
     for n in range(RAY_CAST_COUNT):
       angle = ((2 * math.pi) / RAY_CAST_COUNT) * n
 
-      ray_cast_points.append([(self._player.pos[0], self._player.pos[1]), 
-                              (self._player.pos[0] + math.sin(angle) * 32, self._player.pos[1] + math.cos(angle) * 32),
-                              (self._player.pos[0] + math.sin(angle) * 64, self._player.pos[1] + math.cos(angle) * 64),
-                              (self._player.pos[0] + math.sin(angle) * 128, self._player.pos[1] + math.cos(angle) * 128),
-                              (self._player.pos[0] + math.sin(angle) * 256, self._player.pos[1] + math.cos(angle) * 256),
-                              (self._player.pos[0] + math.sin(angle) * 512, self._player.pos[1] + math.cos(angle) * 512)])
+      ray_cast_points.append((self._player.pos[0], self._player.pos[1], 
+                              self._player.pos[0] + math.sin(angle) * 512, self._player.pos[1] + math.cos(angle) * 512))
       
-      ray_cast_update.append([False, False, False, False, False])
+      ray_cast_update.extend([512])
 
     for enemy in enemy_list_update:
       enemy_collision = self._get_entity_collision(enemy)
@@ -268,14 +267,14 @@ class MarbleGameEnv(gym.Env):
         continue
 
       for index, points in enumerate(ray_cast_points):
-        for section in range(RAY_CAST_SECTION):
-          ray_cast_update[index][section] = ray_cast_update[index][section] or self._check_line_collision(enemy_collision, points[section] + points[section + 1])
+        contact_dist = self._check_line_collision(enemy_collision, points)
+        if contact_dist:
+          ray_cast_update[index] = min(ray_cast_update[index], contact_dist)
 
     # Update saved variable
     self._enemy_list = enemy_list_update - enemy_list_to_remove
     self._bullet_list = bullet_list_update - bullet_list_to_remove
     self._player_ray_cast = np.asarray(ray_cast_update)
-    self._ray_cast_points = ray_cast_points
 
     # Observation and Info
     observation = self._get_obs()
@@ -341,10 +340,15 @@ class MarbleGameEnv(gym.Env):
     red_line_colour = (255, 0, 0)
     green_line_colour = (0, 127, 0)
       
-    for index, points in enumerate(self._ray_cast_points):
-      for section in range(RAY_CAST_SECTION):
-        line_colour = green_line_colour if self._player_ray_cast[index, section] else red_line_colour
-        pygame.draw.line(canvas, line_colour, points[section], points[section + 1])
+    for n in range(RAY_CAST_COUNT):
+      angle = ((2 * math.pi) / RAY_CAST_COUNT) * n
+
+      ray_cast_points = [(self._player.pos[0], self._player.pos[1]),
+                        (self._player.pos[0] + math.sin(angle) * self._player_ray_cast[n], self._player.pos[1] + math.cos(angle) * self._player_ray_cast[n]),
+                        (self._player.pos[0] + math.sin(angle) * 512, self._player.pos[1] + math.cos(angle) * 512)]
+
+      pygame.draw.line(canvas, red_line_colour, ray_cast_points[0], ray_cast_points[1])
+      pygame.draw.line(canvas, green_line_colour, ray_cast_points[1], ray_cast_points[2])
 
     if self.render_mode == "human":
       # The following line copies our drawings from `canvas` to the visible window

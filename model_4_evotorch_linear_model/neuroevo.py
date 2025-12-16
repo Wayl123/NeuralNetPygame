@@ -7,19 +7,32 @@ from game_environment import MarbleGame
 import os
 import datetime
 
-MAX_MEMORY = 100000
-BATCH_SIZE = 1000
-LR = 0.001
-MAX_GAME = 256
-GAME_PROCESSES = 1
+LOAD_MODEL = False
+POP_SIZE = 64
+RUN_AMOUNT = 64
+RADIUS_INIT = 5.0
 
 class LinearNetwork(nn.Module):
   def __init__(self, obs_len, act_len, bias = True, **kwargs):
     super().__init__()
-    self.linear = nn.Linear(obs_len, act_len, bias = bias)
+    
+    self.linear_layers = nn.Sequential(
+      nn.Linear(obs_len, 128, bias = bias),
+      nn.ReLU(),
+      nn.Linear(128, 256, bias = bias),
+      nn.ReLU(),
+      nn.Linear(256, 512, bias = bias),
+      nn.ReLU(),
+      nn.Linear(512, 256, bias = bias),
+      nn.ReLU(),
+      nn.Linear(256, 128, bias = bias),
+      nn.ReLU(),
+      nn.Linear(128, act_len, bias = bias),
+      nn.Tanh()
+    )
 
   def forward(self, obs):
-    return self.linear(obs)
+    return self.linear_layers(obs)
   
   def save(self, file_name = "model.pth"):
     model_folder_path = os.path.join(os.path.dirname(__file__), "model")
@@ -82,7 +95,7 @@ def train_game(network : torch.nn.Module, save_image = False):
   return score
 
 def train():
-  load_saved_model = True
+  load_saved_model = LOAD_MODEL
   model = LinearNetwork((32 * 5) + 6, 7)
 
   if load_saved_model:
@@ -98,20 +111,28 @@ def train():
     num_actors = 4
   )
 
+  max_speed = RADIUS_INIT / 15
+  center_learning_rate = max_speed / 2
+
   # Apply Searcher to the Problem
   searcher = PGPE(
     problem,
-    popsize = 64,
-    radius_init = 2.25,
-    center_learning_rate = 0.2,
-    stdev_learning_rate = 0.1
+    popsize = POP_SIZE,
+    radius_init = max_speed,
+    center_learning_rate = center_learning_rate,
+    stdev_learning_rate = 0.1,
+    optimizer="clipup",
+    optimizer_config = {
+        'max_speed': max_speed,
+        'momentum': 0.9
+    }
   )
 
   # Log result
   logger = PandasLogger(searcher)
 
   # Run searcher
-  searcher.run(64)
+  searcher.run(RUN_AMOUNT)
 
   print("train end: {time}".format(time = datetime.datetime.now()))
 
@@ -140,12 +161,12 @@ def test_model():
   print("start: {time}".format(time = datetime.datetime.now()))
 
   model = LinearNetwork((32 * 5) + 6, 7)
-
   model.load()
   train_game(model, True)
 
   print("end: {time}".format(time = datetime.datetime.now()))
 
 if __name__ == '__main__':
-  train()
+  for _ in range(1):
+    train()
   # test_model()
