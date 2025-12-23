@@ -3,16 +3,38 @@ import torch.nn as nn
 from evotorch.neuroevolution import GymNE
 from evotorch.algorithms import PGPE
 from evotorch.logging import PandasLogger
-import gymnasium
-import gymnasium_env
+import gymnasium as gym
+from gymnasium.wrappers import FlattenObservation
 import os
 import datetime
+import numpy as np
 
 LOAD_MODEL = False
 POP_SIZE = 64
 RUN_AMOUNT = 64
 RADIUS_INIT = 5.0
 RAY_CAST_COUNT = 32
+
+class BinaryActionWrapper(gym.ActionWrapper):
+  def __init__(self, env):
+    super().__init__(env)
+    # Ensure the space is treated as Box by GymNE
+    # but represents the binary nature
+    self.action_space = gym.spaces.Box(0, 1, shape = (env.action_space.n, ), dtype = np.float32)
+
+  def action(self, action):
+    # Convert continuous [0, 1] floats to binary [0, 1] integers
+    # Any value > 0.5 becomes 1, else 0
+    return (action > 0.5).astype(np.int8)
+
+def init_env():
+  import gymnasium_env
+
+  env = gym.make('gymnasium_env/MarbleGame-v0')
+  env = FlattenObservation(env)
+  env = BinaryActionWrapper(env)
+
+  return env
 
 class LinearNetwork(nn.Module):
   def __init__(self, obs_len, act_len, bias = True, **kwargs):
@@ -64,7 +86,7 @@ def train():
 
   # Set the NeuroEvolution Problem
   problem = GymNE(
-    env = "gymnasium_env/MarbleGame-v0",
+    env = init_env,
     network = model,
     num_actors = 4
   )
@@ -123,9 +145,22 @@ def test_model():
   model = LinearNetwork(4 + RAY_CAST_COUNT, 7)
   model.load()
 
-  env = gymnasium.make('gymnasium_env/MarbleGame-v0', render_mode="human")
-  env.reset()
+  env = gym.make('gymnasium_env/MarbleGame-v0', render_mode="human")
+  obs, _ = env.reset()
 
+  score = 0
+  done = False
+
+  while not done:
+    # Get move
+    prediction = model(torch.tensor(obs, dtype = torch.float32))
+    action = [move > 0 for move in prediction]
+
+    obs, reward, done, _, info = env.step(action)
+
+    score += reward
+
+  print("score: {score}".format(score = score))
   print("end: {time}".format(time = datetime.datetime.now()))
 
 if __name__ == '__main__':

@@ -8,21 +8,20 @@ import random
 
 PLAYER_SPEED = 0.5
 PLAYER_ROT_SPEED = 0.1
-PLAYER_SIZE = (16, 16)
-PLAYER_HEAD_SIZE = (4, 4)
+PLAYER_SIZE = (16.0, 16.0)
+PLAYER_HEAD_SIZE = (4.0, 4.0)
 PLAYER_SHOOTING_COOLDOWN = 0.5
 
 ENEMY_SPEED = 0.2
 ENEMY_ROT_SPEED = 0.1
-ENEMY_SIZE = (8, 8)
-ENEMY_HEAD_SIZE = (2, 2)
+ENEMY_SIZE = (8.0, 8.0)
+ENEMY_HEAD_SIZE = (2.0, 2.0)
 
 BULLET_SPEED = 2.0
-BULLET_SIZE = (4, 4)
+BULLET_SIZE = (4.0, 4.0)
 BULLET_LIFESPAN = 10.0
 
 RAY_CAST_COUNT = 32
-RAY_CAST_SECTION = 5
 
 SCREEN_SIZE = (512, 512)
 STARTING_ANGLE = math.pi
@@ -54,24 +53,24 @@ class BulletEntity(BaseEntity):
     self.lifespan = lifespan
     self.start = time.time()
 
-class MarbleGameEnv(gym.Env):
+class MarbleGameEnv(gym.Env[np.ndarray[np.float64], np.int8]):
   metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 64}
   
   def __init__(self, render_mode=None, size=5):
     self.size = size  # The size of the square grid
-    self.window_size = 512  # The size of the PyGame window
+    self.window_size = 512.0  # The size of the PyGame window
 
     # Observation space 
     self.observation_space = gym.spaces.Dict(
       {
-        "position": gym.spaces.Box(0, self.window_size - 1, shape = (2, ), dtype = np.float64),
+        "position": gym.spaces.Box(0.0, self.window_size - 1, shape = (2, ), dtype = np.float64),
         "angle": gym.spaces.Box(-math.pi, math.pi, shape = (2, ), dtype = np.float64),
-        "ray_cast": gym.spaces.Box(0, 512, shape = (RAY_CAST_COUNT, ), dtype = np.float64)
+        "ray_cast": gym.spaces.Box(0.0, 512.0, shape = (RAY_CAST_COUNT, ), dtype = np.float64)
       }
     )
 
     # 4 directional action
-    self.action_space = gym.spaces.MultiBinary(4)
+    self.action_space = gym.spaces.MultiBinary(7)
 
     assert render_mode is None or render_mode in self.metadata["render_modes"]
     self.render_mode = render_mode
@@ -89,15 +88,14 @@ class MarbleGameEnv(gym.Env):
     super().reset(seed = seed)
 
     # Observation
-    self._player = PlayerEntity(PLAYER_SIZE, np.array([SCREEN_SIZE[0] / 2, SCREEN_SIZE[1] / 2], dtype = np.float64), STARTING_ANGLE, PLAYER_SPEED, PLAYER_ROT_SPEED)
-    self._player_ray_cast = np.asarray([512] * RAY_CAST_COUNT, dtype = np.float64)
+    self._player = PlayerEntity(PLAYER_SIZE, np.array([SCREEN_SIZE[0] / 2.0, SCREEN_SIZE[1] / 2.0], dtype = np.float64), STARTING_ANGLE, PLAYER_SPEED, PLAYER_ROT_SPEED)
+    self._player_ray_cast = np.asarray([512.0] * RAY_CAST_COUNT, dtype = np.float64)
 
     # Info
     self._start_time = time.time()
     self._enemy_list = set([])
     self._bullet_list = set([])
     self._enemy_last_spawn = None
-    self._ray_cast_points = np.asarray([[(0,0)] * 6] * 32)
 
     observation = self._get_obs()
     info = self._get_info()
@@ -249,7 +247,6 @@ class MarbleGameEnv(gym.Env):
 
       if self._check_collision(player_collision, enemy_collision):
         terminated = True
-        reward -= 10
 
       enemy_remove_flag = False
 
@@ -345,7 +342,7 @@ class MarbleGameEnv(gym.Env):
 
       ray_cast_points = [(self._player.pos[0], self._player.pos[1]),
                         (self._player.pos[0] + math.sin(angle) * self._player_ray_cast[n], self._player.pos[1] + math.cos(angle) * self._player_ray_cast[n]),
-                        (self._player.pos[0] + math.sin(angle) * 512, self._player.pos[1] + math.cos(angle) * 512)]
+                        (self._player.pos[0] + math.sin(angle) * 512.0, self._player.pos[1] + math.cos(angle) * 512.0)]
 
       pygame.draw.line(canvas, red_line_colour, ray_cast_points[0], ray_cast_points[1])
       pygame.draw.line(canvas, green_line_colour, ray_cast_points[1], ray_cast_points[2])
