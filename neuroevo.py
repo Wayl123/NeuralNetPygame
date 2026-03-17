@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from evotorch.neuroevolution import GymNE
-from evotorch.algorithms import PGPE
+from evotorch.algorithms import PGPE, Cosyne
 from evotorch.logging import PandasLogger
 import gymnasium as gym
 from gymnasium.wrappers import FlattenObservation
@@ -10,8 +10,8 @@ import datetime
 import numpy as np
 
 LOAD_MODEL = False
-POP_SIZE = 64
-RUN_AMOUNT = 64
+POP_SIZE = 128
+RUN_AMOUNT = 256
 RADIUS_INIT = 5.0
 RAY_CAST_COUNT = 32
 
@@ -27,10 +27,10 @@ class BinaryActionWrapper(gym.ActionWrapper):
     # Any value > 0.5 becomes 1, else 0
     return (action > 0.5).astype(np.int8)
 
-def init_env():
+def init_env(render_mode = None):
   import gymnasium_env
 
-  env = gym.make('gymnasium_env/MarbleGame-v0')
+  env = gym.make('gymnasium_env/MarbleGame-v0', render_mode = render_mode)
   env = FlattenObservation(env)
   env = BinaryActionWrapper(env)
 
@@ -91,21 +91,31 @@ def train():
     num_actors = 4
   )
 
-  max_speed = RADIUS_INIT / 15
-  center_learning_rate = max_speed / 2
+  # max_speed = RADIUS_INIT / 15
+  # center_learning_rate = max_speed / 2
 
   # Apply Searcher to the Problem
-  searcher = PGPE(
+  # searcher = PGPE(
+  #   problem,
+  #   popsize = POP_SIZE,
+  #   radius_init = max_speed,
+  #   center_learning_rate = center_learning_rate,
+  #   stdev_learning_rate = 0.1,
+  #   optimizer="clipup",
+  #   optimizer_config = {
+  #       'max_speed': max_speed,
+  #       'momentum': 0.9
+  #   }
+  # )
+
+  searcher = Cosyne(
     problem,
+    num_elites = 1,
     popsize = POP_SIZE,
-    radius_init = max_speed,
-    center_learning_rate = center_learning_rate,
-    stdev_learning_rate = 0.1,
-    optimizer="clipup",
-    optimizer_config = {
-        'max_speed': max_speed,
-        'momentum': 0.9
-    }
+    tournament_size = 4,
+    mutation_stdev = 0.3,
+    mutation_probability = 0.5,
+    permute_all = True
   )
 
   # Log result
@@ -115,6 +125,9 @@ def train():
   searcher.run(RUN_AMOUNT)
 
   print("train end: {time}".format(time = datetime.datetime.now()))
+
+  # Save model
+  model.save()
 
   # Plot mean score
   plot_figure = logger.to_dataframe().mean_eval.plot().get_figure()

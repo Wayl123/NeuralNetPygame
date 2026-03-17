@@ -53,7 +53,7 @@ class BulletEntity(BaseEntity):
     self.lifespan = lifespan
     self.start = time.time()
 
-class MarbleGameEnv(gym.Env[np.ndarray[np.float64], np.int8]):
+class MarbleGameEnv(gym.Env):
   metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 64}
   
   def __init__(self, render_mode=None, size=5):
@@ -267,6 +267,8 @@ class MarbleGameEnv(gym.Env[np.ndarray[np.float64], np.int8]):
         contact_dist = self._check_line_collision(enemy_collision, points)
         if contact_dist:
           ray_cast_update[index] = min(ray_cast_update[index], contact_dist)
+
+    reward += 0.01
 
     # Update saved variable
     self._enemy_list = enemy_list_update - enemy_list_to_remove
