@@ -268,7 +268,7 @@ class MarbleGameEnv(gym.Env):
         if contact_dist:
           ray_cast_update[index] = min(ray_cast_update[index], contact_dist)
 
-    reward += 0.01
+    reward += 0.0001
 
     # Update saved variable
     self._enemy_list = enemy_list_update - enemy_list_to_remove
