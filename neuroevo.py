@@ -13,7 +13,7 @@ import pickle
 
 LOAD_MODEL = False
 POP_SIZE = 128
-RUN_AMOUNT = 256
+RUN_AMOUNT = 1024
 RAY_CAST_COUNT = 32
 
 class BinaryActionWrapper(gym.ActionWrapper):
@@ -38,18 +38,63 @@ def init_env(render_mode = None):
   return env
 
 @pass_info
-class LinearNetwork(nn.Module):
+class Linear1LayerNetwork(nn.Module):
   def __init__(self, obs_length, act_length, bias = True, **kwargs):
     super().__init__()
     
     self.linear_layers = nn.Sequential(
-      nn.Linear(obs_length, act_length, bias = bias)
+      nn.Linear(obs_length, act_length, bias = bias),
+      nn.Tanh()
     )
 
   def forward(self, obs):
     return self.linear_layers(obs)
 
-def train():
+@pass_info
+class Linear2LayerNetwork(nn.Module):
+  def __init__(self, obs_length, act_length, bias = True, **kwargs):
+    super().__init__()
+    
+    self.linear_layers = nn.Sequential(
+      nn.Linear(obs_length, 64, bias = bias),
+      nn.LeakyReLU(),
+      nn.Linear(64, act_length, bias = bias),
+      nn.Tanh()
+    )
+
+  def forward(self, obs):
+    return self.linear_layers(obs)
+  
+@pass_info
+class Linear3LayerNetwork(nn.Module):
+  def __init__(self, obs_length, act_length, bias = True, **kwargs):
+    super().__init__()
+    
+    self.linear_layers = nn.Sequential(
+      nn.Linear(obs_length, 64, bias = bias),
+      nn.LeakyReLU(),
+      nn.Linear(64, 32, bias = bias),
+      nn.LeakyReLU(),
+      nn.Linear(32, act_length, bias = bias),
+      nn.Tanh()
+    )
+
+  def forward(self, obs):
+    return self.linear_layers(obs)
+  
+def uniquify(path, sep = '_'):
+  count = 1
+
+  path = os.path.normpath(path)
+  filename, ext = os.path.splitext(path)
+
+  while os.path.exists(path):
+    path = "{f}{s}{n:d}{e}".format(f = filename, s = sep, n = count, e = ext)
+    count += 1
+
+  return path
+
+def train(model = Linear1LayerNetwork):
   load_saved_model = LOAD_MODEL
 
   print("start: {time}".format(time = datetime.datetime.now()))
@@ -57,8 +102,9 @@ def train():
   # Set the NeuroEvolution Problem
   problem = GymNE(
     env = init_env,
-    network = LinearNetwork,
-    num_actors = 4
+    network = model,
+    num_actors = "max",
+    num_gpus_per_actor = "max"
   )
 
   searcher = Cosyne(
@@ -102,6 +148,8 @@ def train():
     os.makedirs(policy_folder_path)
 
   policy_full_file_name = os.path.join(policy_folder_path, policy_file_name)
+  if os.path.exists(policy_full_file_name):
+    os.rename(policy_full_file_name, uniquify(policy_full_file_name))
   problem.save_solution(center_solution, policy_full_file_name)
 
   # Visualize best population
@@ -145,6 +193,7 @@ def test_model():
   print("end: {time}".format(time = datetime.datetime.now()))
 
 if __name__ == '__main__':
-  # for _ in range(1):
-  #   train()
-  test_model()
+  models = [Linear1LayerNetwork, Linear2LayerNetwork, Linear3LayerNetwork]
+  for model_index in range(len(models)):
+    train(models[model_index])
+  # test_model()
