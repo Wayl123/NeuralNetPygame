@@ -1,6 +1,6 @@
 __pycache__
 model
+evotorch_sample
+policy
 result_display
 test.py
-model_lunarlander
-neuroevo_lunarlander.py
