@@ -336,6 +336,7 @@ class MarbleGameEnv(gym.Env):
 
       canvas.blit(bullet_rotated, bullet_rect)
 
+    # Ray cast
     red_line_colour = (255, 0, 0)
     green_line_colour = (0, 127, 0)
       
