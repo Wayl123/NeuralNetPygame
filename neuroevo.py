@@ -15,7 +15,7 @@ LOAD_MODEL = False
 POP_SIZE = 128
 RUN_AMOUNT = 64
 RUN_TIME = 16
-RAY_CAST_COUNT = 32
+RAY_CAST_COUNT = 64
 
 class BinaryActionWrapper(gym.ActionWrapper):
   def __init__(self, env):
@@ -207,6 +207,5 @@ def test_model():
 
 if __name__ == '__main__':
   # models = [Linear1LayerNetwork, Linear2LayerNetwork, Linear3LayerNetwork]
-  # for _ in range(4):
   train(Linear1LayerNetwork)
   # test_model()
