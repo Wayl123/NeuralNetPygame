@@ -6,64 +6,43 @@ import random
 from PIL import Image
 from PIL import ImageDraw
 
-PLAYER_SPEED = 0.5
-PLAYER_ROT_SPEED = 0.1
-PLAYER_SIZE = (16, 16)
-PLAYER_HEAD_SIZE = (4, 4)
-PLAYER_SHOOTING_COOLDOWN = 0.5
+PLAYER_SPEED = 1.0
+PLAYER_HP = 10.0
+PLAYER_SIZE = (16.0, 16.0)
 
-ENEMY_SPEED = 0.2
-ENEMY_ROT_SPEED = 0.1
-ENEMY_SIZE = (8, 8)
-ENEMY_HEAD_SIZE = (2, 2)
+MAX_FOOD = 10
+FOOD_SPAWN_RATE = 0.1
+FOOD_SIZE = (8.0, 8.0)
 
-BULLET_SPEED = 2
-BULLET_SIZE = (4, 4)
-BULLET_LIFESPAN = 10.0
-
-RAY_CAST_COUNT = 32
+RAY_CAST_COUNT = 64
 
 SCREEN_SIZE = 512
-STARTING_ANGLE = math.pi / 2
-BASE_SPAWN_RATE = 5
-BASE_SPAWN_AMOUNT = 1
-MIN_SPAWN_RATE = 0.1
 
 class BaseEntity:
-  def __init__(self, size, pos, angle, speed, rot_speed):
+  def __init__(self, size, pos, speed, hp):
     self.size = size
     self.pos = pos
-    self.angle = angle
     self.speed = speed
-    self.rot_speed = rot_speed
+    self.hp = hp
 
 class PlayerEntity(BaseEntity):
-  def __init__(self, size, pos, angle, speed, rot_speed):
-    BaseEntity.__init__(self, size, pos, angle, speed, rot_speed)
-    self.cooldown_start = 0
-    self.cooldown = PLAYER_SHOOTING_COOLDOWN
+  def __init__(self, size, pos, speed, hp):
+    BaseEntity.__init__(self, size, pos, speed, hp)
 
-class EnemyEntity(BaseEntity):
-  def __init__(self, size, pos, angle, speed, rot_speed):
-    BaseEntity.__init__(self, size, pos, angle, speed, rot_speed)
-
-class BulletEntity(BaseEntity):
-  def __init__(self, size, pos, angle, speed, lifespan = BULLET_LIFESPAN):
-    BaseEntity.__init__(self, size, pos, angle, speed, 0)
-    self.lifespan = lifespan
-    self.start = time.time()
+class FoodEntity(BaseEntity):
+  def __init__(self, size, pos):
+    BaseEntity.__init__(self, size, pos, 0.0, 1.0)
 
 def get_init_state():
-  return [PlayerEntity(PLAYER_SIZE, np.array([SCREEN_SIZE / 2.0, SCREEN_SIZE / 2.0], dtype = np.float64), STARTING_ANGLE, PLAYER_SPEED, PLAYER_ROT_SPEED), # player
+  return [PlayerEntity(PLAYER_SIZE, np.array([SCREEN_SIZE / 2.0, SCREEN_SIZE / 2.0], dtype = np.float64), PLAYER_SPEED, PLAYER_HP), # player
           np.asarray([512.0] * RAY_CAST_COUNT, dtype = np.float64), # ray_cast
           time.time(), # start_time
-          set([]), # enemy_list
-          set([]), # bullet_list
-          None, # enemy_last_spawn
+          set([]), # food_list
+          None, # food_last_spawn
           0] # score
 
 def update_state(action, state):
-  player, _, start_time, enemy_list, bullet_list, enemy_last_spawn, score = state
+  player, _, start_time, food_list, food_last_spawn, score = state
 
   # Player action
   player_move_direction = np.array([0, 0], dtype = float)
@@ -83,53 +62,28 @@ def update_state(action, state):
 
   player.pos = np.clip(np.add(player.pos, player_move_direction * player.speed), 0, SCREEN_SIZE - 1)
 
-  rotation = 0
-  
-  if action[4]:
-    rotation += player.rot_speed
-  if action[5]:
-    rotation -= player.rot_speed
+  # Food spawn
+  food_list_update = copy.deepcopy(food_list)
 
-  player.angle = (player.angle + rotation) % (2 * math.pi)
+  spawn_rate = FOOD_SPAWN_RATE
 
-  # Enemy action
-  enemy_list_update = copy.deepcopy(enemy_list)
+  if not food_last_spawn:
+    while len(food_list_update) < MAX_FOOD:
+      spawn_food(food_list_update)
 
-  for enemy in enemy_list_update:
-    enemy.angle = math.atan2(player.pos[1] - enemy.pos[1], player.pos[0] - enemy.pos[0])
-    enemy_move_direction = np.array([math.cos(enemy.angle), math.sin(enemy.angle)])
+    food_last_spawn = time.time()
+  elif time.time() - food_last_spawn > spawn_rate and len(food_list_update) < MAX_FOOD:
+    spawn_food(food_list_update)
 
-    enemy.pos = np.add(enemy.pos, enemy_move_direction * enemy.speed)
-
-  time_elapsed = time.time() - start_time
-  spawn_rate = max(MIN_SPAWN_RATE, BASE_SPAWN_RATE - (time_elapsed // 10) * 0.1)
-  spawn_amount = BASE_SPAWN_AMOUNT + (time_elapsed // 60)
-
-  if not enemy_last_spawn or time.time() - enemy_last_spawn > spawn_rate:
-    for _ in range(int(spawn_amount)):
-      random_coord = random_edge_pos()
-      enemy_list_update.add(EnemyEntity(ENEMY_SIZE, random_coord, STARTING_ANGLE, ENEMY_SPEED, ENEMY_ROT_SPEED))
-    enemy_last_spawn = time.time()
-
-  # Bullet
-  bullet_list_update = copy.deepcopy(bullet_list)
-
-  for bullet in bullet_list_update:
-    bullet_move_direction = np.array([math.cos(bullet.angle), math.sin(bullet.angle)])
-
-    bullet.pos = np.add(bullet.pos, bullet_move_direction * bullet.speed)
-
-  if action[6]:
-    if time.time() - player.cooldown_start > player.cooldown:
-      player.cooldown_start = time.time()
-      bullet_list_update.add(BulletEntity(BULLET_SIZE, player.pos, player.angle, BULLET_SPEED))
-
-  bullet_list_update = {bullet for bullet in bullet_list_update if time.time() - bullet.start <= bullet.lifespan}
+    food_last_spawn = time.time()
 
   # Collision and Ray-cast
-  game_over = False
+  reward = 0
+  terminated = False
 
   player_collision = get_entity_collision(player)
+
+  food_list_to_remove = set([])
 
   ray_cast_points = []
   ray_cast_update = []
@@ -142,53 +96,51 @@ def update_state(action, state):
     
     ray_cast_update.extend([512])
 
-  reward = 0
+  for food in food_list_update:
+    food_collision = get_entity_collision(food)
 
-  enemy_list_to_remove = set([])
-  bullet_list_to_remove = set([])
+    food_remove_flag = False
 
-  for enemy in enemy_list_update:
-    enemy_collision = get_entity_collision(enemy)
+    if check_collision(player_collision, food_collision):
+      food_list_to_remove.add(food)
+      if player.hp < 10:
+        player.hp = min(player.hp + 1, PLAYER_HP)
+      reward += 1
+      food_remove_flag = True
 
-    if check_collision(player_collision, enemy_collision):
-      game_over = True
-
-    enemy_remove_flag = False
-
-    for bullet in bullet_list_update:
-      bullet_collision = get_entity_collision(bullet)
-
-      if check_collision(enemy_collision, bullet_collision):
-        enemy_list_to_remove.add(enemy)
-        bullet_list_to_remove.add(bullet)
-        reward += 1
-        enemy_remove_flag = True
-        break
-
-    if enemy_remove_flag:
+    if food_remove_flag:
       continue
 
     for index, points in enumerate(ray_cast_points):
-      contact_dist = check_line_collision(enemy_collision, points)
+      contact_dist = check_line_collision(food_collision, points)
       if contact_dist:
         ray_cast_update[index] = min(ray_cast_update[index], contact_dist)
 
-  reward += 0.0001
+  # Time drain
+  player.hp -= 0.001
+  if player.hp <= 0:
+    terminated = True
+  reward -= 0.001
 
-  enemy_list_update = enemy_list_update - enemy_list_to_remove
-  bullet_list_update = bullet_list_update - bullet_list_to_remove
+  # Time limit
+  if time.time() - start_time > 60:
+    terminated = True
+
+  food_list_update = food_list_update - food_list_to_remove
 
   # Scores
   score_update = score + reward
 
-  return [player, ray_cast_update, start_time, enemy_list_update, bullet_list_update, enemy_last_spawn, score_update], reward, game_over
+  return [player, np.asarray(ray_cast_update), start_time, food_list_update, food_last_spawn, score_update], reward, terminated
 
-def random_edge_pos():
-  random_edge = random.randrange(4)
-  random_pos = random.randrange(SCREEN_SIZE)
-  random_coord = np.array([random_pos if random_edge % 2 == i else SCREEN_SIZE * (random_edge // 2) for i in range(2)])
+def random_pos():
+  random_coord = np.array([random.randrange(SCREEN_SIZE), random.randrange(SCREEN_SIZE)])
 
   return random_coord
+
+def spawn_food(food_list):
+  if len(food_list) < MAX_FOOD:
+    food_list.add(FoodEntity(FOOD_SIZE, random_pos()))
 
 def get_entity_collision(entity : BaseEntity):
   return (entity.pos[0] - (entity.size[0] / 2), entity.pos[0] + (entity.size[0] / 2), entity.pos[1] - (entity.size[1] / 2), entity.pos[1] + (entity.size[1] / 2))
@@ -255,16 +207,12 @@ class MarbleGame:
     return self.state, reward, done
   
   def get_state_observation(self, state):
-    player, ray_cast, _, _, _, _, _ = state
+    player, ray_cast, _, _, _, _ = state
 
     cur_state = [
       # Player dist from edge
       player.pos[0],
-      player.pos[1],
-
-      # Shooting direction
-      math.cos(player.angle),
-      math.sin(player.angle)
+      player.pos[1]
     ]
 
     # List of ray cast from player and whether they have collided with an enemy or not
@@ -276,7 +224,7 @@ class MarbleGame:
   def render(state) -> Image:
     img = Image.new("RGB", (SCREEN_SIZE, SCREEN_SIZE), (255, 255, 255))
     draw = ImageDraw.Draw(img)
-    player, ray_cast, _, enemy_list, bullet_list, _, _ = state
+    player, ray_cast, _, food_list, _, _ = state
 
     # Player
     draw.circle(
@@ -285,32 +233,20 @@ class MarbleGame:
       (0, 0, 127),
       (0, 0, 0)
     )
-    draw.circle(
-      np.add(player.pos, np.array([math.cos(player.angle), math.sin(player.angle)]) * ((PLAYER_SIZE[0] - PLAYER_HEAD_SIZE[0]) // 2)),
-      PLAYER_HEAD_SIZE[0] // 2,
-      (255, 255, 255)
+
+    hp_ratio = player.hp / PLAYER_HP
+
+    draw.rectangle(
+      [tuple(np.add(player.pos, (2 - (PLAYER_SIZE[0] // 2), 2 - (PLAYER_SIZE[1] // 2)))), tuple(np.add(player.pos, ((12 * hp_ratio) + 2.1 - (PLAYER_SIZE[0] // 2), 4 - (PLAYER_SIZE[1] // 2))))], 
+      (127, 0, 0)
     )
 
-    # Enemy
-    for enemy in enemy_list:
+    # Food
+    for food in food_list:
       draw.circle(
-        tuple(enemy.pos),
-        ENEMY_SIZE[0] // 2,
-        (127, 0, 0),
-        (0, 0, 0)
-      )
-      draw.circle(
-        np.add(enemy.pos, np.array([math.cos(enemy.angle), math.sin(enemy.angle)]) * ((ENEMY_SIZE[0] - ENEMY_HEAD_SIZE[0]) // 2)),
-        ENEMY_HEAD_SIZE[0] // 2,
-        (255, 255, 255)
-      )
-
-    # Bullet
-    for bullet in bullet_list:
-      draw.circle(
-        tuple(bullet.pos),
-        BULLET_SIZE[0] // 2,
-        (255, 255, 0),
+        tuple(food.pos),
+        FOOD_SIZE[0] // 2,
+        (0, 127, 0),
         (0, 0, 0)
       )
 

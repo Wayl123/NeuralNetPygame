@@ -207,7 +207,7 @@ def render(agent):
       images.append(game.render(state))
 
     if done:
-      scores = state[5]
+      scores = state[6]
       score = sum(scores)
 
   file_name = "result_{score}.gif".format(score = score)

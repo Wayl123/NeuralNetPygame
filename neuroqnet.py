@@ -15,9 +15,9 @@ LOAD_MODEL = False
 MAX_MEMORY = 100000
 BATCH_SIZE = 1000
 LR = 0.001
-RUN_AMOUNT = 16384
+RUN_AMOUNT = 1024
 GAME_PROCESSES = 4
-RAY_CAST_COUNT = 32
+RAY_CAST_COUNT = 64
 
 # Model
 class Linear_QNet(nn.Module):
@@ -30,25 +30,28 @@ class Linear_QNet(nn.Module):
     )
 
     self.linear_2_layers = nn.Sequential(
-      nn.Linear(obs_length, 64, bias = bias),
+      nn.Linear(obs_length, 32, bias = bias),
       nn.LeakyReLU(),
-      nn.Linear(64, act_length, bias = bias),
+      nn.Dropout(0.1),
+      nn.Linear(32, act_length, bias = bias),
       nn.Tanh()
     )
 
     self.linear_3_layers = nn.Sequential(
-      nn.Linear(obs_length, 64, bias = bias),
+      nn.Linear(obs_length, 32, bias = bias),
       nn.LeakyReLU(),
-      nn.Linear(64, 32, bias = bias),
+      nn.Dropout(0.2),
+      nn.Linear(32, 16, bias = bias),
       nn.LeakyReLU(),
-      nn.Linear(32, act_length, bias = bias),
+      nn.Dropout(0.1),
+      nn.Linear(16, act_length, bias = bias),
       nn.Tanh()
     )
 
     self.record = nn.Parameter(torch.tensor(0, dtype = torch.float64), False)
 
   def forward(self, x):
-    x = self.linear_1_layers(x)
+    x = self.linear_3_layers(x)
 
     return x
   
@@ -68,12 +71,6 @@ class Linear_QNet(nn.Module):
       self.eval()
 
       # os.rename(file_name, uniquify(file_name))
-
-  def load_record(self, file_name = "model.pth"):
-    model_folder_path = os.path.join(os.path.dirname(__file__), "model")
-    file_name = os.path.join(model_folder_path, file_name)
-    if os.path.exists(file_name):
-      self.record = nn.Parameter(torch.load(file_name)["record"], False)
 
 class QTrainer:
   def __init__(self, model, lr, gamma):
@@ -121,7 +118,7 @@ class Agent:
     self.n_games = 1
     self.gamma = 0.9 # Discount rate
     self.memory = deque(maxlen = MAX_MEMORY)
-    self.model = Linear_QNet((RAY_CAST_COUNT) + 4, 7)
+    self.model = Linear_QNet((RAY_CAST_COUNT) + 2, 4)
     self.trainer = QTrainer(self.model, lr = LR, gamma=self.gamma)
 
   def remember(self, obs, action, reward, next_obs, done):
@@ -141,8 +138,15 @@ class Agent:
     self.trainer.train_step(obs, action, reward, next_obs, done)
 
   def get_action(self, obs):
+    self.epsilon = (RUN_AMOUNT // 8) - self.n_games
+
     prediction = self.model(torch.tensor(obs, dtype = torch.float))
     final_move = [move > 0 for move in prediction]
+
+    # Some chance of randomizing move at the beginning to get the training started, decreases as training goes on
+    for index, move in enumerate(final_move):
+      if random.randint(0, (RUN_AMOUNT // 4)) < self.epsilon:
+        final_move[index] = not move
 
     return final_move
   
@@ -174,7 +178,7 @@ def plot(scores, mean_scores, result_file_name):
   plt.ylabel('Score')
   plt.plot(scores)
   plt.plot(mean_scores)
-  plt.ylim(ymin = 0)
+  plt.ylim(ymin = -11)
   plt.text(len(scores) - 1, scores[-1], str(scores[-1]))
   plt.text(len(mean_scores) - 1, mean_scores[-1], str(mean_scores[-1]))
   plt.show(block=False)
@@ -247,9 +251,9 @@ def train_game(agent, record, plot_data):
       images.append(game.render(state))
 
     if done:
-      score = state[6]
+      score = state[5]
 
-      if score > record.value:
+      if score > record.value + 0.0001:
         record.value = score
         agent.model.record = nn.Parameter(torch.tensor(score, dtype = torch.int), False)
         agent.model.save()
@@ -283,7 +287,7 @@ def train_game(agent, record, plot_data):
 def train():
   load_saved_model = LOAD_MODEL
   agent = Agent()
-  record = mp.Value("f", 0)
+  record = mp.Value("f", -100)
 
   plot_data = {
     "total_score": 0,
@@ -297,10 +301,6 @@ def train():
 
   if load_saved_model:
     agent.model.load()
-  else:
-    agent.model.load_record()
-
-  record.value = agent.model.record.data.item()
 
   agent.model.share_memory()
 
