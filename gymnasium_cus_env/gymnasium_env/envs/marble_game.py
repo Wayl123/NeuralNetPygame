@@ -6,32 +6,53 @@ import time
 import copy
 import random
 
-PLAYER_SPEED = 1.0
-PLAYER_HP = 10.0
+PLAYER_SPEED = 0.5
+PLAYER_ROT_SPEED = 0.1
 PLAYER_SIZE = (16.0, 16.0)
+PLAYER_HEAD_SIZE = (4.0, 4.0)
+PLAYER_SHOOTING_COOLDOWN = 0.5
 
-MAX_FOOD = 10
-FOOD_SPAWN_RATE = 0.1
-FOOD_SIZE = (8.0, 8.0)
+ENEMY_SPEED = 0.2
+ENEMY_ROT_SPEED = 0.1
+ENEMY_SIZE = (8.0, 8.0)
+ENEMY_HEAD_SIZE = (2.0, 2.0)
 
-RAY_CAST_COUNT = 64
+BULLET_SPEED = 2.0
+BULLET_SIZE = (4.0, 4.0)
+BULLET_LIFESPAN = 10.0
+
+RAY_CAST_COUNT = 32
+FRONT_RAY_CAST_COUNT = 3
 
 SCREEN_SIZE = (512, 512)
+STARTING_ANGLE = math.pi
+BASE_SPAWN_RATE = 20.0
+BASE_SPAWN_AMOUNT = 1
+MIN_SPAWN_RATE = 0.5
 
 class BaseEntity:
-  def __init__(self, size, pos, speed, hp):
+  def __init__(self, size, pos, angle, speed, rot_speed):
     self.size = size
     self.pos = pos
+    self.angle = angle
     self.speed = speed
-    self.hp = hp
+    self.rot_speed = rot_speed
 
 class PlayerEntity(BaseEntity):
-  def __init__(self, size, pos, speed, hp):
-    BaseEntity.__init__(self, size, pos, speed, hp)
+  def __init__(self, size, pos, angle, speed, rot_speed):
+    BaseEntity.__init__(self, size, pos, angle, speed, rot_speed)
+    self.cooldown_start = 0.0
+    self.cooldown = PLAYER_SHOOTING_COOLDOWN
 
-class FoodEntity(BaseEntity):
-  def __init__(self, size, pos):
-    BaseEntity.__init__(self, size, pos, 0.0, 1.0)
+class EnemyEntity(BaseEntity):
+  def __init__(self, size, pos, angle, speed, rot_speed):
+    BaseEntity.__init__(self, size, pos, angle, speed, rot_speed)
+
+class BulletEntity(BaseEntity):
+  def __init__(self, size, pos, angle, speed, lifespan = BULLET_LIFESPAN):
+    BaseEntity.__init__(self, size, pos, angle, speed, 0.0)
+    self.lifespan = lifespan
+    self.start = time.time()
 
 class MarbleGameEnv(gym.Env):
   metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 64}
@@ -44,12 +65,13 @@ class MarbleGameEnv(gym.Env):
     self.observation_space = gym.spaces.Dict(
       {
         "position": gym.spaces.Box(0.0, self.window_size - 1, shape = (2, ), dtype = np.float64),
-        "ray_cast": gym.spaces.Box(0.0, 512.0, shape = (RAY_CAST_COUNT, ), dtype = np.float64)
+        "angle": gym.spaces.Box(-math.pi, math.pi, shape = (2, ), dtype = np.float64),
+        "ray_cast": gym.spaces.Box(0.0, 512.0, shape = (RAY_CAST_COUNT + FRONT_RAY_CAST_COUNT, ), dtype = np.float64)
       }
     )
 
     # 4 directional action
-    self.action_space = gym.spaces.MultiBinary(4)
+    self.action_space = gym.spaces.MultiBinary(7)
 
     assert render_mode is None or render_mode in self.metadata["render_modes"]
     self.render_mode = render_mode
@@ -58,22 +80,23 @@ class MarbleGameEnv(gym.Env):
     self.clock = None
 
   def _get_obs(self):
-    return {"position": self._player.pos, "ray_cast": self._player_ray_cast}
+    return {"position": self._player.pos, "angle": np.array([math.sin(self._player.angle), math.cos(self._player.angle)], dtype = np.float64), "ray_cast": self._player_ray_cast}
 
   def _get_info(self):
-    return {"player":self._player, "start_time": self._start_time, "food_list": self._food_list}
+    return {"player":self._player, "start_time": self._start_time, "enemy_list": self._enemy_list, "bullet_list": self._bullet_list, "enemy_last_spawn": self._enemy_last_spawn}
 
   def reset(self, seed = None, options = None):
     super().reset(seed = seed)
 
     # Observation
-    self._player = PlayerEntity(PLAYER_SIZE, np.array([SCREEN_SIZE[0] / 2.0, SCREEN_SIZE[1] / 2.0], dtype = np.float64), PLAYER_SPEED, PLAYER_HP)
-    self._player_ray_cast = np.asarray([512.0] * RAY_CAST_COUNT, dtype = np.float64)
+    self._player = PlayerEntity(PLAYER_SIZE, np.array([SCREEN_SIZE[0] / 2.0, SCREEN_SIZE[1] / 2.0], dtype = np.float64), STARTING_ANGLE, PLAYER_SPEED, PLAYER_ROT_SPEED)
+    self._player_ray_cast = np.asarray([512.0] * (RAY_CAST_COUNT + FRONT_RAY_CAST_COUNT), dtype = np.float64)
 
     # Info
     self._start_time = time.time()
-    self._food_list = set([])
-    self._food_last_spawn = None
+    self._enemy_list = set([])
+    self._bullet_list = set([])
+    self._enemy_last_spawn = None
 
     observation = self._get_obs()
     info = self._get_info()
@@ -83,8 +106,10 @@ class MarbleGameEnv(gym.Env):
 
     return observation, info
   
-  def _random_pos(self):
-    random_coord = np.array([random.randrange(SCREEN_SIZE[0]), random.randrange(SCREEN_SIZE[1])])
+  def _random_edge_pos(self):
+    random_edge = random.randrange(4)
+    random_pos = random.randrange(SCREEN_SIZE[random_edge % 2])
+    random_coord = np.array([random_pos if random_edge % 2 == i else SCREEN_SIZE[i] * (random_edge // 2) for i in range(2)])
 
     return random_coord
   
@@ -134,11 +159,10 @@ class MarbleGameEnv(gym.Env):
     # Return distance from clip object
     return math.dist([x1, y1], [x1_clip, y1_clip])
   
-  def spawn_food(self, food_list):
-    if len(food_list) < MAX_FOOD:
-      food_list.add(FoodEntity(FOOD_SIZE, self._random_pos()))
-  
   def step(self, action):
+    reward = 0
+    terminated = False
+
     # Player action
     # Position
     player_move_direction = np.array([0, 0], dtype = float)
@@ -158,32 +182,66 @@ class MarbleGameEnv(gym.Env):
 
     self._player.pos = np.clip(np.add(self._player.pos, player_move_direction * self._player.speed), 0, self.window_size - 1)
 
-    # Food spawn
-    food_list_update = copy.deepcopy(self._food_list)
+    # Angle
+    rotation = 0
+  
+    if action[4]:
+      rotation -= PLAYER_ROT_SPEED
+    if action[5]:
+      rotation += PLAYER_ROT_SPEED
 
-    spawn_rate = FOOD_SPAWN_RATE
+    self._player.angle = (self._player.angle + rotation) % (2 * math.pi)
 
-    if not self._food_last_spawn:
-      while len(food_list_update) < MAX_FOOD:
-        self.spawn_food(food_list_update)
+    # Enemy action
+    enemy_list_update = copy.deepcopy(self._enemy_list)
 
-      self._food_last_spawn = time.time()
-    elif time.time() - self._food_last_spawn > spawn_rate and len(food_list_update) < MAX_FOOD:
-      self.spawn_food(food_list_update)
+    for enemy in enemy_list_update:
+      enemy.angle = math.atan2(self._player.pos[0] - enemy.pos[0], self._player.pos[1] - enemy.pos[1])
+      enemy_move_direction = np.array([math.sin(enemy.angle), math.cos(enemy.angle)])
 
-      self._food_last_spawn = time.time()
+      enemy.pos = np.add(enemy.pos, enemy_move_direction * enemy.speed)
+
+    time_elapsed = time.time() - self._start_time
+    spawn_rate = max(MIN_SPAWN_RATE, BASE_SPAWN_RATE - (time_elapsed // 10) * 0.1)
+    spawn_amount = BASE_SPAWN_AMOUNT + (time_elapsed // 60)
+
+    if not self._enemy_last_spawn or time.time() - self._enemy_last_spawn > spawn_rate:
+      for _ in range(int(spawn_amount)):
+        random_coord = self._random_edge_pos()
+        enemy_list_update.add(EnemyEntity(ENEMY_SIZE, random_coord, STARTING_ANGLE, ENEMY_SPEED, ENEMY_ROT_SPEED))
+      self._enemy_last_spawn = time.time()
+
+    # Bullet
+    bullet_list_update = copy.deepcopy(self._bullet_list)
+    shoot_flag = False
+
+    for bullet in bullet_list_update:
+      bullet_move_direction = np.array([math.sin(bullet.angle), math.cos(bullet.angle)])
+
+      bullet.pos = np.add(bullet.pos, bullet_move_direction * bullet.speed)
+
+    if action[6]:
+      if time.time() - self._player.cooldown_start > self._player.cooldown:
+        shoot_flag = True
+        self._player.cooldown_start = time.time()
+        bullet_list_update.add(BulletEntity(BULLET_SIZE, self._player.pos, self._player.angle, BULLET_SPEED))
+
+    bullet_list_update = {bullet for bullet in bullet_list_update if time.time() - bullet.start <= bullet.lifespan}
 
     # Collision and Ray-cast
-    reward = 0
-    terminated = False
-
     player_collision = self._get_entity_collision(self._player)
 
-    food_list_to_remove = set([])
+    enemy_list_to_remove = set([])
+    bullet_list_to_remove = set([])
 
     ray_cast_points = []
     ray_cast_update = []
+    front_ray_cast_points = []
+    front_ray_cast_update = []
 
+    enemy_front_flag = False
+
+    # Ray cast around
     for n in range(RAY_CAST_COUNT):
       angle = ((2 * math.pi) / RAY_CAST_COUNT) * n
 
@@ -192,39 +250,61 @@ class MarbleGameEnv(gym.Env):
       
       ray_cast_update.extend([512])
 
-    for food in food_list_update:
-      food_collision = self._get_entity_collision(food)
+    # Ray cast in front
+    for n in range(FRONT_RAY_CAST_COUNT):
+      angle = self._player.angle + ((n - (FRONT_RAY_CAST_COUNT // 2)) * (2 * math.pi) / 512)
 
-      food_remove_flag = False
+      front_ray_cast_points.append((self._player.pos[0], self._player.pos[1], 
+                              self._player.pos[0] + math.sin(angle) * 512, self._player.pos[1] + math.cos(angle) * 512))
+      
+      front_ray_cast_update.extend([512])
 
-      if self._check_collision(player_collision, food_collision):
-        food_list_to_remove.add(food)
-        if self._player.hp < 10:
-          self._player.hp = min(self._player.hp + 1, PLAYER_HP)
-        reward += 1
-        food_remove_flag = True
+    for enemy in enemy_list_update:
+      enemy_collision = self._get_entity_collision(enemy)
 
-      if food_remove_flag:
+      if self._check_collision(player_collision, enemy_collision):
+        terminated = True
+
+      enemy_remove_flag = False
+
+      for bullet in bullet_list_update:
+        bullet_collision = self._get_entity_collision(bullet)
+
+        if self._check_collision(enemy_collision, bullet_collision):
+          enemy_list_to_remove.add(enemy)
+          bullet_list_to_remove.add(bullet)
+          reward += 1
+          enemy_remove_flag = True
+          break
+
+      if enemy_remove_flag:
         continue
 
       for index, points in enumerate(ray_cast_points):
-        contact_dist = self._check_line_collision(food_collision, points)
+        contact_dist = self._check_line_collision(enemy_collision, points)
         if contact_dist:
           ray_cast_update[index] = min(ray_cast_update[index], contact_dist)
 
-    # Time drain
-    self._player.hp -= 0.001
-    if self._player.hp <= 0:
-      terminated = True
-    reward -= 0.001
+      for index, points in enumerate(front_ray_cast_points):
+        contact_dist = self._check_line_collision(enemy_collision, points)
+        if contact_dist:
+          enemy_front_flag = True
+          front_ray_cast_update[index] = min(front_ray_cast_update[index], contact_dist)
+
+    # Slightly reward shooting when enemy is ahead
+    if shoot_flag and enemy_front_flag:
+      reward += 0.001
+
+    reward += 0.0001
 
     # Time limit
     if time.time() - self._start_time > 60:
       terminated = True
 
     # Update saved variable
-    self._food_list = food_list_update - food_list_to_remove
-    self._player_ray_cast = np.asarray(ray_cast_update)
+    self._enemy_list = enemy_list_update - enemy_list_to_remove
+    self._bullet_list = bullet_list_update - bullet_list_to_remove
+    self._player_ray_cast = np.asarray(ray_cast_update + front_ray_cast_update)
 
     # Observation and Info
     observation = self._get_obs()
@@ -251,31 +331,42 @@ class MarbleGameEnv(gym.Env):
     canvas.fill((255, 255, 255))
 
     # Player image
-    player_image = pygame.Surface(PLAYER_SIZE, pygame.SRCALPHA)
+    player_image = pygame.Surface((16, 16), pygame.SRCALPHA)
     pygame.draw.circle(player_image, (0, 0, 127), (8, 8), 8)
-
-    hp_ratio = self._player.hp / PLAYER_HP
-
-    pygame.draw.rect(player_image, (127, 0, 0), (2, 2, 12 * hp_ratio, 2))
+    pygame.draw.circle(player_image, (255, 255, 255), (8, 2), 2)
 
     player_rect = player_image.get_rect()
 
+    player_rotated = pygame.transform.rotate(player_image, math.degrees(self._player.angle + math.pi))
     player_rect.center = self._player.pos
 
-    canvas.blit(player_image, player_rect)
+    canvas.blit(player_rotated, player_rect)
 
-    # Food image
-    food_image = pygame.Surface(FOOD_SIZE, pygame.SRCALPHA)
-    pygame.draw.circle(food_image, (0, 127, 0), (4, 4), 4)
+    # Enemy image
+    enemy_image = pygame.Surface((8, 8), pygame.SRCALPHA)
+    pygame.draw.circle(enemy_image, (127, 0, 0), (4, 4), 4)
+    pygame.draw.circle(enemy_image, (255, 255, 255), (4, 2), 2)
+    
+    for enemy in self._enemy_list:
+      enemy_rect = enemy_image.get_rect()
 
-    for food in self._food_list:
-      food_rect = food_image.get_rect()
+      enemy_rotated = pygame.transform.rotate(enemy_image, math.degrees(enemy.angle + math.pi))
+      enemy_rect.center = enemy.pos
 
-      food_rect.center = food.pos
+      canvas.blit(enemy_rotated, enemy_rect)
 
-      canvas.blit(food_image, food_rect)
+    # Bullet image
+    bullet_image = pygame.Surface((4, 4), pygame.SRCALPHA)
+    bullet_image.fill(pygame.Color(127, 127, 0))
 
-    # Ray cast
+    for bullet in self._bullet_list:
+      bullet_rect = bullet_image.get_rect()
+
+      bullet_rotated = pygame.transform.rotate(bullet_image, math.degrees(bullet.angle + math.pi))
+      bullet_rect.center = bullet.pos
+
+      canvas.blit(bullet_rotated, bullet_rect)
+
     red_line_colour = (255, 0, 0)
     green_line_colour = (0, 127, 0)
       
@@ -284,6 +375,16 @@ class MarbleGameEnv(gym.Env):
 
       ray_cast_points = [(self._player.pos[0], self._player.pos[1]),
                         (self._player.pos[0] + math.sin(angle) * self._player_ray_cast[n], self._player.pos[1] + math.cos(angle) * self._player_ray_cast[n]),
+                        (self._player.pos[0] + math.sin(angle) * 512.0, self._player.pos[1] + math.cos(angle) * 512.0)]
+
+      pygame.draw.line(canvas, red_line_colour, ray_cast_points[0], ray_cast_points[1])
+      pygame.draw.line(canvas, green_line_colour, ray_cast_points[1], ray_cast_points[2])
+
+    for n in range(FRONT_RAY_CAST_COUNT):
+      angle = self._player.angle + ((n - (FRONT_RAY_CAST_COUNT // 2)) * (2 * math.pi) / 512)
+
+      ray_cast_points = [(self._player.pos[0], self._player.pos[1]),
+                        (self._player.pos[0] + math.sin(angle) * self._player_ray_cast[RAY_CAST_COUNT + n], self._player.pos[1] + math.cos(angle) * self._player_ray_cast[RAY_CAST_COUNT +n]),
                         (self._player.pos[0] + math.sin(angle) * 512.0, self._player.pos[1] + math.cos(angle) * 512.0)]
 
       pygame.draw.line(canvas, red_line_colour, ray_cast_points[0], ray_cast_points[1])

@@ -13,9 +13,8 @@ import pickle
 
 LOAD_MODEL = False
 POP_SIZE = 128
-RUN_AMOUNT = 64
-RUN_TIME = 16
-RAY_CAST_COUNT = 64
+RUN_AMOUNT = 16
+RUN_TIME = 64
 
 class BinaryActionWrapper(gym.ActionWrapper):
   def __init__(self, env):
@@ -136,6 +135,12 @@ def train(model = Linear1LayerNetwork):
 
   result_full_file_name = os.path.join(result_folder_path, result_file_name)
 
+  # Saved policy model file location
+  policy_file_name = "policy.pickle"
+  policy_folder_path = os.path.join(os.path.dirname(__file__), "policy")
+  if not os.path.exists(policy_folder_path):
+    os.makedirs(policy_folder_path)
+  
   # Run searcher
   for train_section in range(RUN_TIME):
     searcher.run(RUN_AMOUNT)
@@ -149,19 +154,14 @@ def train(model = Linear1LayerNetwork):
 
     print(logger.to_dataframe())
 
-  # Best population solution
-  center_solution = searcher.status["pop_best"]
+    # Best population solution
+    center_solution = searcher.status["pop_best"]
 
-  # Save best population policy
-  policy_file_name = "policy.pickle"
-  policy_folder_path = os.path.join(os.path.dirname(__file__), "policy")
-  if not os.path.exists(policy_folder_path):
-    os.makedirs(policy_folder_path)
-
-  policy_full_file_name = os.path.join(policy_folder_path, policy_file_name)
-  # if os.path.exists(policy_full_file_name):
-  #   os.rename(policy_full_file_name, uniquify(policy_full_file_name))
-  problem.save_solution(center_solution, policy_full_file_name)
+    # Save best population policy per cycle
+    policy_full_file_name = os.path.join(policy_folder_path, policy_file_name)
+    if os.path.exists(policy_full_file_name):
+      os.rename(policy_full_file_name, uniquify(policy_full_file_name))
+    problem.save_solution(center_solution, policy_full_file_name)
 
   # Visualize best population
   # policy_net = problem.to_policy(center_solution)
@@ -178,7 +178,7 @@ def test_model():
 
   saved_model = None
 
-  policy_file_name = "policy.pickle"
+  policy_file_name = "policy_12.pickle"
   policy_folder_path = os.path.join(os.path.dirname(__file__), "policy")
   policy_full_file_name = os.path.join(policy_folder_path, policy_file_name)
 
@@ -207,5 +207,5 @@ def test_model():
 
 if __name__ == '__main__':
   # models = [Linear1LayerNetwork, Linear2LayerNetwork, Linear3LayerNetwork]
-  train(Linear1LayerNetwork)
-  # test_model()
+  # train(Linear1LayerNetwork)
+  test_model()
