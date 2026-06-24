@@ -14,7 +14,7 @@ import pickle
 LOAD_MODEL = False
 POP_SIZE = 128
 RUN_AMOUNT = 16
-RUN_TIME = 64
+RUN_TIME = 8
 
 class BinaryActionWrapper(gym.ActionWrapper):
   def __init__(self, env):
@@ -178,7 +178,7 @@ def test_model():
 
   saved_model = None
 
-  policy_file_name = "policy_12.pickle"
+  policy_file_name = "policy_7.pickle"
   policy_folder_path = os.path.join(os.path.dirname(__file__), "policy")
   policy_full_file_name = os.path.join(policy_folder_path, policy_file_name)
 

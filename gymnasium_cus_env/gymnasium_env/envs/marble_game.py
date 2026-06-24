@@ -6,7 +6,7 @@ import time
 import copy
 import random
 
-PLAYER_SPEED = 0.5
+PLAYER_SPEED = 0.0
 PLAYER_ROT_SPEED = 0.1
 PLAYER_SIZE = (16.0, 16.0)
 PLAYER_HEAD_SIZE = (4.0, 4.0)
@@ -26,7 +26,7 @@ FRONT_RAY_CAST_COUNT = 3
 
 SCREEN_SIZE = (512, 512)
 STARTING_ANGLE = math.pi
-BASE_SPAWN_RATE = 20.0
+BASE_SPAWN_RATE = 2.0
 BASE_SPAWN_AMOUNT = 1
 MIN_SPAWN_RATE = 0.5
 
@@ -202,8 +202,8 @@ class MarbleGameEnv(gym.Env):
       enemy.pos = np.add(enemy.pos, enemy_move_direction * enemy.speed)
 
     time_elapsed = time.time() - self._start_time
-    spawn_rate = max(MIN_SPAWN_RATE, BASE_SPAWN_RATE - (time_elapsed // 10) * 0.1)
-    spawn_amount = BASE_SPAWN_AMOUNT + (time_elapsed // 60)
+    spawn_rate = max(MIN_SPAWN_RATE, BASE_SPAWN_RATE - (time_elapsed // 10) * 0.2)
+    spawn_amount = BASE_SPAWN_AMOUNT + (time_elapsed // 20)
 
     if not self._enemy_last_spawn or time.time() - self._enemy_last_spawn > spawn_rate:
       for _ in range(int(spawn_amount)):
